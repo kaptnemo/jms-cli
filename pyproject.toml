@@ -1,0 +1,50 @@
+[project]
+name = "jms-cli"
+version = "0.1.0"
+description = "JumpServer v4 bastion asset access CLI + lib: exec, login, SFTP transfer, rsync over ssh-pipe"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "GCS-ZHN" },
+]
+dependencies = [
+    "click>=8.0,<9",
+    "cryptography>=41.0,<46",
+    "paramiko>=4.0.0,<5",
+    "platformdirs>=4.0,<6",
+    "pyotp>=2.9.0,<3",
+    "PyYAML>=6.0,<7",
+    "requests>=2.28.0,<3",
+    "rich>=13.0,<15",
+    "websocket-client>=1.6.0,<2",
+]
+
+[project.urls]
+Homepage = "https://github.com/GCS-ZHN/jms-cli"
+Repository = "https://github.com/GCS-ZHN/jms-cli"
+Issues = "https://github.com/GCS-ZHN/jms-cli/issues"
+
+[project.scripts]
+jms = "jms.cli:main"
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "flake8>=7.3.0,<8",
+    "pytest>=7.0,<9",
+    "pytest-cov>=4.0,<7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jms"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

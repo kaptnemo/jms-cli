@@ -1,0 +1,23 @@
+#!/bin/bash
+# pre-commit hook: run flake8 on staged Python files.
+#
+# Ensures all committed code passes flake8 static analysis.
+# Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+# Get list of staged .py files (excluding deleted)
+staged=$(git diff --cached --name-only --diff-filter=d -- '*.py')
+
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+echo "[lint] Running flake8 on staged files..."
+uv run flake8 $staged
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "[FAIL] flake8 check failed. Fix the above issues before committing."
+    exit 1
+fi
+
+echo "[OK] flake8 passed."
+exit 0

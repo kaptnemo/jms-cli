@@ -1,0 +1,33 @@
+#!/bin/bash
+# pre-push hook: auto-build wheel when pushing a version tag.
+#
+# When a tag matching vX.Y.Z is being pushed, this hook:
+# 1. Verifies pyproject.toml version matches the tag
+# 2. Runs uv build to produce the wheel
+# 3. Aborts the push if versions mismatch
+
+remote="$1"
+url="$2"
+
+while read local_ref local_sha remote_ref remote_sha; do
+    if [[ "$local_ref" =~ ^refs/tags/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+        tag_version="${BASH_REMATCH[1]}"
+        project_version=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+        if [[ "$tag_version" != "$project_version" ]]; then
+            echo "[ERROR] Tag v${tag_version} != pyproject.toml ${project_version}"
+            echo "        Update pyproject.toml and __init__.py first."
+            exit 1
+        fi
+
+        echo "[INFO] Tag v${tag_version} verified. Building wheel..."
+        uv build
+        if [[ $? -ne 0 ]]; then
+            echo "[ERROR] uv build failed. Push aborted."
+            exit 1
+        fi
+        echo "[OK] dist/jms_cli-${tag_version}-py3-none-any.whl"
+    fi
+done
+
+exit 0

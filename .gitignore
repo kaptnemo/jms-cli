@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+.pytest_cache/
+build/
+dist/
+wheels/
+*.egg-info
+*.sif
+
+# Virtual environments
+.venv
+
+# Config files with secrets
+config.json
+config.yaml
+.env
+
+# Tooling
+.codegraph
