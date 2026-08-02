@@ -1,5 +1,9 @@
 # jms-cli
 
+[![PyPI version](https://img.shields.io/pypi/v/jms-cli)](https://pypi.org/project/jms-cli/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/jms-cli)](https://pypi.org/project/jms-cli/)
+[![CI](https://github.com/GCS-ZHN/jms-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/GCS-ZHN/jms-cli/actions/workflows/ci.yml)
+
 A personal CLI tool and Python library for accessing assets behind a
 [JumpServer v4](https://docs.jumpserver.org/zh/v4/) bastion host: remote command
 execution, interactive terminal, parallel SFTP file transfer, and rsync/scp
@@ -17,7 +21,14 @@ incremental sync via an SSH bridge.
 ## Install
 
 ```bash
-uv sync          # or: pip install .
+pip install jms-cli     # or: uv tool install jms-cli
+```
+
+Requires Python >= 3.10. For development from source:
+
+```bash
+git clone git@github.com:GCS-ZHN/jms-cli.git
+cd jms-cli && uv sync
 ```
 
 ## Quick start
@@ -123,8 +134,9 @@ with connect(sess, asset, backend=BackendType.AUTO) as term:
 - [ ] Admin operations (JumpServer management API): asset CRUD, user
       management, permission/grant management — the REST layer (`http.py`) is
       designed for these resource modules
-- [ ] GitHub Actions CI (pure unit tests always run; real-server tests
+- [x] GitHub Actions CI (pure unit tests always run; real-server tests
       auto-skip without `JMS_TEST_*` env vars)
+- [x] PyPI + GitHub release on tag push
 - [ ] Dependency audit (`pip-audit`) in CI
 
 ## Development
