@@ -15,14 +15,11 @@ Commands:
 from __future__ import annotations
 
 import logging
-import os
-import shlex
 import sys
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import TYPE_CHECKING, Callable, ContextManager, Iterator, Union
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Iterator
 
 import click
 
@@ -38,23 +35,10 @@ from jms.exceptions import AssetError, JMSError, TerminalError
 from jms.log import logger, setup_logging
 
 if TYPE_CHECKING:
-    from jms.assets import AssetInfo
-    from jms.auth import JMSSession
-    from jms.backend import AbstractTerminal
-    from jms.transfer import (
-        ChunkPolicy,
-        ChunkSplitPolicy,
-        FileInfo,
-        FileTask,
-        OpenerFactory,
-        RelaySpec,
-        TaskResult,
-        TransferSpec,
-    )
-    from jms.verify import LocalHasher, RemoteHasher
-
-    # Zero-arg callable returning a context manager that yields a hasher.
-    HasherFactory = Callable[[], ContextManager[Union[RemoteHasher, LocalHasher]]]
+    from jms.core.resources import AssetInfo
+    from jms.core.auth import JMSSession
+    from jms.transport import AbstractTerminal
+    from jms.io.transfer import FileTask, OpenerFactory, TaskResult
 
 
 # ──── Target parsing ────────────────────────────────────────────
@@ -136,7 +120,7 @@ def _get_server(config_path: str | None, server: str | None) -> ServerConfig:
 
 def _make_session(server: ServerConfig) -> JMSSession:
     """Open an authenticated session with the interactive MFA prompt wired in."""
-    from jms.auth import JMSSession
+    from jms.core.auth import JMSSession
 
     session = JMSSession(server, otp_prompt=default_otp_prompt)
     session.login()
@@ -150,7 +134,7 @@ def _resolve(
     protocol: str | None = None,
 ) -> tuple[JMSSession, AssetInfo]:
     """Authenticate and resolve an asset. Returns ``(session, asset)``."""
-    from jms.assets import resolve_asset
+    from jms.core.resources import resolve_asset
 
     session = _make_session(server)
     logger.info("Resolving asset '%s' ...", asset_name)
@@ -166,19 +150,6 @@ def _resolve(
         asset.name, asset.address, asset.account, asset.protocol,
     )
     return session, asset
-
-
-def _resolve_asset(
-    session: JMSSession, asset_name: str, account: str | None, side: str,
-) -> AssetInfo:
-    """Resolve an asset on an existing session, with a click-friendly error."""
-    from jms.assets import resolve_asset
-
-    logger.info("Resolving %s asset '%s' ...", side.lower(), asset_name)
-    try:
-        return resolve_asset(session, asset_name, account=account)
-    except AssetError:
-        raise click.ClickException(f"{side} asset '{asset_name}' not found.")
 
 
 @contextmanager
@@ -198,7 +169,7 @@ def _open_terminal(
         protocol: Optional protocol override.
         backend: Backend selection: "ssh", "ws", or "auto" (default).
     """
-    from jms.backend import BackendType, connect
+    from jms.transport import BackendType, connect
 
     backend_type = {
         "ssh": BackendType.SSH,
@@ -347,7 +318,7 @@ def cmd_ls(
         jms ls -q web            # search on default
         jms ls prod -q web       # search on 'prod'
     """
-    from jms.assets import list_assets, search_assets
+    from jms.core.resources import list_assets, search_assets
 
     srv = _get_server(config_path, server)
     session = _make_session(srv)
@@ -532,496 +503,92 @@ def cmd_sftp(
     Recursive directory transfer (skip hidden files):
         jms sftp -R --skip-hidden ./project/ host:/tmp/project/
     """
-    from jms.transfer import RelaySpec, parse_transfer_spec
+    from jms.core.auth import JMSSession
+    from jms.io.service import relay_transfer, sftp_transfer
+    from jms.io.transfer import RelaySpec, parse_transfer_spec
 
     spec = parse_transfer_spec(src, dst)
+    kwargs = dict(
+        account=account,
+        n_workers=parallel,
+        policy_name=policy,
+        split_policy_name=split_policy,
+        chroot=chroot,
+        verify=not no_verify,
+        recursive=recursive,
+        skip_hidden=skip_hidden,
+        session_factory=lambda srv: JMSSession(srv, otp_prompt=default_otp_prompt),
+        on_status=click.echo,
+        execute_hook=_run_transfer_with_progress,
+    )
     if isinstance(spec, RelaySpec):
-        _do_sftp_r2r(
-            spec, config_path, account, parallel, policy,
-            split_policy, chroot, no_verify, recursive, skip_hidden,
-        )
+        relay_transfer(spec, config_path, **kwargs)
     else:
         srv = _get_server(config_path, spec.server)
-        _do_sftp_transfer(
-            srv, spec, account, parallel, policy,
-            split_policy, chroot, no_verify, recursive, skip_hidden,
-        )
+        sftp_transfer(srv, spec, **kwargs)
 
 
-def _do_sftp_transfer(
-    server: ServerConfig,
-    spec: TransferSpec,
-    account: str | None,
-    n_workers: int,
-    policy_name: str | None,
-    split_policy_name: str,
-    chroot: str,
-    no_verify: bool,
-    recursive: bool,
-    skip_hidden: bool,
-) -> None:
-    """Execute an SFTP upload or download (exactly one remote side)."""
-    from jms.transfer import (
-        ChunkPolicy,
-        ChunkSplitPolicy,
-        LocalOpenerFactory,
-        SFTPOpenerFactory,
-        connect_sftp,
-        list_local_files,
-        list_remote_files,
-        resolve_local_dst,
-        resolve_remote_dst,
-    )
-
-    policy = ChunkPolicy(policy_name.lower()) if policy_name else ChunkPolicy.FULL
-    split_policy = ChunkSplitPolicy(split_policy_name.lower())
-    session, asset = _resolve(server, spec.asset, account)
-
-    if spec.is_upload:
-        src_path = Path(spec.local_path)
-        if src_path.is_dir() and not recursive:
-            raise click.ClickException(
-                f"'{spec.local_path}' is a directory. Use -R to transfer recursively."
-            )
-        files = list_local_files(
-            spec.local_path, recursive=recursive, skip_hidden=skip_hidden,
-        )
-        with connect_sftp(session, asset) as sftp:
-            if src_path.is_dir():
-                base = str(src_path)
-                files = [
-                    replace(
-                        f,
-                        dst_path=(
-                            f"{spec.remote_path.rstrip('/')}/"
-                            f"{os.path.relpath(f.src_path, base)}"
-                        ),
-                    )
-                    for f in files
-                ]
-            else:
-                # cp semantics: existing remote dir gets the basename inside
-                dst_file = resolve_remote_dst(sftp, spec.remote_path, src_path.name)
-                files = [replace(f, dst_path=dst_file) for f in files]
-            _run_transfer(
-                files, LocalOpenerFactory(), SFTPOpenerFactory(sftp),
-                "upload", n_workers, policy, split_policy,
-                src_hasher_factory=None if no_verify else _local_hasher_cm,
-                dst_hasher_factory=(
-                    None if no_verify
-                    else lambda: _ssh_hasher_cm(session, asset, chroot=chroot)
-                ),
-                merge_session=session,
-                merge_asset=asset,
-                merge_chroot=chroot,
-            )
-    else:
-        with connect_sftp(session, asset) as sftp:
-            try:
-                src_info = sftp.stat(spec.remote_path)
-            except Exception:
-                raise click.ClickException(
-                    f"Remote path not found: {spec.remote_path}"
-                )
-            if src_info["is_dir"] and not recursive:
-                raise click.ClickException(
-                    f"'{spec.remote_path}' is a directory. "
-                    f"Use -R to transfer recursively."
-                )
-            files = list_remote_files(
-                sftp, spec.remote_path, recursive=recursive, skip_hidden=skip_hidden,
-            )
-            if src_info["is_dir"]:
-                base = spec.remote_path.rstrip("/")
-                files = [
-                    replace(
-                        f,
-                        dst_path=str(
-                            Path(spec.local_path) / _relative(base, f.src_path)
-                        ),
-                    )
-                    for f in files
-                ]
-            else:
-                files = [
-                    replace(
-                        f,
-                        dst_path=resolve_local_dst(
-                            spec.local_path, Path(f.src_path).name,
-                        ),
-                    )
-                    for f in files
-                ]
-            # Local dst: POSIX pwrite on a local fd is always safe, so the
-            # split-files policy is meaningless on download — force SEEK.
-            _run_transfer(
-                files, SFTPOpenerFactory(sftp), LocalOpenerFactory(),
-                "download", n_workers, policy, ChunkSplitPolicy.SEEK,
-                src_hasher_factory=(
-                    None if no_verify
-                    else lambda: _ssh_hasher_cm(session, asset, chroot=chroot)
-                ),
-                dst_hasher_factory=None if no_verify else _local_hasher_cm,
-            )
-
-
-def _do_sftp_r2r(
-    spec: RelaySpec,
-    config_path: str | None,
-    account: str | None,
-    n_workers: int,
-    policy_name: str | None,
-    split_policy_name: str,
-    chroot: str,
-    no_verify: bool,
-    recursive: bool,
-    skip_hidden: bool,
-) -> None:
-    """Execute a remote-to-remote transfer (streamed relay, no local disk)."""
-    from jms.transfer import (
-        ChunkPolicy,
-        ChunkSplitPolicy,
-        SFTPOpenerFactory,
-        connect_sftp,
-        list_remote_files,
-        resolve_remote_dst,
-    )
-
-    policy = ChunkPolicy(policy_name.lower()) if policy_name else ChunkPolicy.FULL
-    split_policy = ChunkSplitPolicy(split_policy_name.lower())
-
-    src_session = _make_session(_get_server(config_path, spec.src_server))
-    src_asset = _resolve_asset(src_session, spec.src_asset, account, "Source")
-    dst_session = _make_session(_get_server(config_path, spec.dst_server))
-    dst_asset = _resolve_asset(dst_session, spec.dst_asset, account, "Destination")
-
-    with connect_sftp(src_session, src_asset) as src_sftp:
-        try:
-            src_info = src_sftp.stat(spec.src_path)
-        except Exception:
-            raise click.ClickException(f"Source path not found: {spec.src_path}")
-        if src_info["is_dir"] and not recursive:
-            raise click.ClickException(
-                f"'{spec.src_path}' is a directory. Use -R to transfer recursively."
-            )
-        files = list_remote_files(
-            src_sftp, spec.src_path, recursive=recursive, skip_hidden=skip_hidden,
-        )
-        with connect_sftp(dst_session, dst_asset) as dst_sftp:
-            if src_info["is_dir"]:
-                base = spec.src_path.rstrip("/")
-                files = [
-                    replace(
-                        f,
-                        dst_path=(
-                            f"{spec.dst_path.rstrip('/')}/"
-                            f"{_relative(base, f.src_path)}"
-                        ),
-                    )
-                    for f in files
-                ]
-            else:
-                # cp semantics: existing dst dir gets the basename inside
-                dst_file = resolve_remote_dst(
-                    dst_sftp, spec.dst_path, Path(spec.src_path).name,
-                )
-                files = [replace(f, dst_path=dst_file) for f in files]
-            _run_transfer(
-                files,
-                SFTPOpenerFactory(src_sftp), SFTPOpenerFactory(dst_sftp),
-                "relay", n_workers, policy, split_policy,
-                src_hasher_factory=(
-                    None if no_verify
-                    else lambda: _ssh_hasher_cm(src_session, src_asset, chroot=chroot)
-                ),
-                dst_hasher_factory=(
-                    None if no_verify
-                    else lambda: _ssh_hasher_cm(dst_session, dst_asset, chroot=chroot)
-                ),
-                merge_session=dst_session,
-                merge_asset=dst_asset,
-                merge_chroot=chroot,
-            )
-
-
-def _relative(base: str, path: str) -> str:
-    """Strip the ``base/`` prefix from a remote path (basename as fallback)."""
-    if path.startswith(base + "/"):
-        return path[len(base) + 1:]
-    return Path(path).name
-
-
-@contextmanager
-def _ssh_hasher_cm(
-    session: JMSSession, asset: AssetInfo, chroot: str = "/",
-) -> Iterator[RemoteHasher]:
-    """Yield a RemoteHasher bound to a throwaway SSH-exec terminal."""
-    from jms.backend import connect_ssh
-    from jms.verify import RemoteHasher
-
-    with connect_ssh(session, asset) as term:
-        yield RemoteHasher(term, chroot=chroot)
-
-
-@contextmanager
-def _local_hasher_cm() -> Iterator[LocalHasher]:
-    """Yield a LocalHasher (context-managed for symmetry with _ssh_hasher_cm)."""
-    from jms.verify import LocalHasher
-
-    yield LocalHasher()
-
-
-def _merge_parts_via_ssh(
-    session: JMSSession,
-    asset: AssetInfo,
-    parts_by_target: dict[str, list[TaskResult]],
-    cleanup: bool = False,
-    chroot: str = "/",
-) -> None:
-    """Assemble ``.partNN`` files into their merge target via SSH ``cat``.
-
-    Success is verified by a sentinel echo plus a byte-size check: the
-    merged file's size must equal the sum of the part sizes.
-
-    Args:
-        session: Authenticated session for the dst host.
-        asset: Resolved asset on the dst host.
-        parts_by_target: Output of ``group_parts_by_merge_target``.
-        cleanup: Remove the part files after a successful merge.
-        chroot: SFTP chroot in SSH-exec terms (see
-            ``verify.translate_remote_path``). Part files and the merge
-            target are SFTP-side paths and must be translated before the
-            ``cat`` / ``rm`` shell command runs.
-
-    Raises:
-        click.ClickException: If the remote merge fails for any target.
-    """
-    if not parts_by_target:
-        return
-    from jms.backend import connect_ssh
-    from jms.verify import translate_remote_path
-
-    with connect_ssh(session, asset) as term:
-        for target, parts in parts_by_target.items():
-            part_paths = [translate_remote_path(chroot, r.task.dst_path) for r in parts]
-            quoted_parts = " ".join(shlex.quote(p) for p in part_paths)
-            quoted_target = shlex.quote(translate_remote_path(chroot, target))
-            expected_size = sum(r.task.chunk_size for r in parts)
-            cmd = f"cat {quoted_parts} > {quoted_target} && stat -c %s {quoted_target}"
-            if cleanup:
-                cmd += f" && rm -f {quoted_parts}"
-            cmd += " && echo __MERGE_OK__"
-            logger.info(
-                "merging %d part(s) into %s%s ...",
-                len(parts), target, " (+ cleanup)" if cleanup else "",
-            )
-            try:
-                out = term.execute(cmd, timeout=3600)
-            except Exception as e:
-                raise click.ClickException(f"merge SSH exec failed for {target}: {e}")
-            if "__MERGE_OK__" not in out:
-                raise click.ClickException(f"merge failed for {target}: {out[:500]}")
-            lines = [ln for ln in out.splitlines() if ln.strip()]
-            try:
-                actual_size = int(lines[-2])
-            except (IndexError, ValueError):
-                raise click.ClickException(
-                    f"merge size check failed for {target}: "
-                    f"could not parse size from {out[:500]}"
-                )
-            if actual_size != expected_size:
-                raise click.ClickException(
-                    f"merge size mismatch for {target}: "
-                    f"expected {expected_size}, got {actual_size}"
-                )
-            logger.info(
-                "merged %s: %d bytes from %d part(s)",
-                target, actual_size, len(parts),
-            )
-
-
-def _report_spot_check_failures(results: list[TaskResult]) -> None:
-    """Warn about chunks whose inline spot check exhausted all retries.
-
-    Not fatal by itself — the md5 verify pass catches and retries any
-    real corruption — but the user deserves to see that the guard tripped.
-    """
-    for r in results:
-        if not r.verified:
-            click.echo(
-                f"[WARNING] chunk {r.task.chunk_index} of "
-                f"{r.task.merge_to or r.task.dst_path}: inline spot check "
-                f"failed all {r.attempts} attempt(s); relying on md5 "
-                f"verify pass to catch / retry"
-            )
-
-
-def _run_transfer(
-    files: list[FileInfo],
+def _run_transfer_with_progress(
+    tasks: list[FileTask],
     src_factory: OpenerFactory,
     dst_factory: OpenerFactory,
-    direction: str,
     n_workers: int,
-    policy: ChunkPolicy,
-    split_policy: ChunkSplitPolicy,
-    src_hasher_factory: HasherFactory | None = None,
-    dst_hasher_factory: HasherFactory | None = None,
-    merge_session: JMSSession | None = None,
-    merge_asset: AssetInfo | None = None,
-    merge_chroot: str = "/",
-    max_retries: int = 3,
-) -> None:
-    """Run a transfer with rich progress, md5 verification, and chunk retry.
+    direction: str,
+) -> list[TaskResult]:
+    """Execute transfer tasks under a rich progress bar (CLI execute_hook).
 
-    The hasher factories are invoked once per verification round (after
-    each transfer attempt); both None means verification is skipped. For
-    ``split_policy=SPLIT_FILES`` on a remote dst, ``merge_session`` +
-    ``merge_asset`` must be supplied so part files can be assembled via
-    SSH ``cat`` after each transfer round.
+    Injected into ``jms.io.service.run_transfer``; rendering is a pure CLI
+    concern, so it lives here rather than in the service layer.
     """
-    from jms.transfer import (
-        ChunkSplitPolicy,
-        execute_transfer,
-        group_parts_by_merge_target,
-        plan_transfer,
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TextColumn,
+        TimeRemainingColumn,
+        TransferSpeedColumn,
     )
 
-    if not files:
-        click.echo("No files to transfer.")
-        return
+    from jms.io.transfer import execute_transfer
 
-    tasks = plan_transfer(
-        files, n_workers=n_workers, policy=policy, split_policy=split_policy,
+    progress = Progress(
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        DownloadColumn(binary_units=True),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
     )
-    total_bytes = sum(f.size for f in files)
-    total_files = len(files)
+    with progress:
+        file_tasks: dict[str, int] = {}
+        file_progress: dict[str, int] = {}
+        lock = threading.Lock()
 
-    logger.info(
-        "%s: %d file(s), %d task(s), %d worker(s), %d bytes, policy=%s, split=%s",
-        direction, total_files, len(tasks), n_workers, total_bytes,
-        policy.value, split_policy.value,
-    )
-
-    def _execute(current_tasks: list[FileTask]) -> list[TaskResult]:
-        from rich.progress import (
-            BarColumn,
-            DownloadColumn,
-            Progress,
-            TextColumn,
-            TimeRemainingColumn,
-            TransferSpeedColumn,
-        )
-
-        progress = Progress(
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(),
-            DownloadColumn(binary_units=True),
-            TransferSpeedColumn(),
-            TimeRemainingColumn(),
-        )
-        with progress:
-            file_tasks: dict[str, int] = {}
-            file_progress: dict[str, int] = {}
-            lock = threading.Lock()
-
-            for task in current_tasks:
-                if task.src_path not in file_tasks:
-                    file_tasks[task.src_path] = progress.add_task(
-                        f"{direction.capitalize()} {task.filename}",
-                        total=task.total_size,
-                    )
-
-            def cb(task: FileTask, bytes_done: int) -> None:
-                key = task.src_path
-                with lock:
-                    # bytes_done may be negative on spot-check rewind
-                    chunk_key = f"{key}:{task.chunk_index}"
-                    prev = file_progress.get(chunk_key, 0)
-                    file_progress[chunk_key] = max(
-                        0, prev + bytes_done if bytes_done < 0 else bytes_done,
-                    )
-                    total_done = sum(
-                        v for k, v in file_progress.items()
-                        if k.startswith(f"{key}:")
-                    )
-                    progress.update(file_tasks[key], completed=total_done)
-
-            return execute_transfer(
-                current_tasks, src_factory, dst_factory,
-                n_workers=n_workers, callback=cb,
-            )
-
-    def _maybe_merge(current_results: list[TaskResult], cleanup: bool = False) -> None:
-        if split_policy != ChunkSplitPolicy.SPLIT_FILES:
-            return
-        parts = group_parts_by_merge_target(current_results)
-        if not parts:
-            return
-        if merge_session is None or merge_asset is None:
-            raise click.ClickException(
-                "split-files policy requires a remote dst with SSH exec "
-                "access; merge_session/asset not supplied"
-            )
-        _merge_parts_via_ssh(
-            merge_session, merge_asset, parts, cleanup=cleanup, chroot=merge_chroot,
-        )
-
-    results = _execute(tasks)
-    _report_spot_check_failures(results)
-    _maybe_merge(results, cleanup=False)
-    total = sum(r.bytes_done for r in results)
-
-    if src_hasher_factory is not None and dst_hasher_factory is not None:
-        from jms.verify import verify_files
-
-        for attempt in range(1, max_retries + 2):
-            click.echo(f"[verify] round {attempt}: computing md5sum on both sides ...")
-            with src_hasher_factory() as src_hasher, \
-                    dst_hasher_factory() as dst_hasher:
-                file_results = verify_files(results, src_hasher, dst_hasher)
-
-            all_ok = all(fr.ok for fr in file_results)
-            for fr in file_results:
-                if fr.ok:
-                    click.echo(f"[OK] md5 match: {fr.dst_path} ({fr.src_md5})")
-                else:
-                    click.echo(
-                        f"[FAIL] md5 mismatch: {fr.dst_path} "
-                        f"(src={fr.src_md5 or '?'}, dst={fr.dst_md5 or '?'}, "
-                        f"bad_chunks={len(fr.bad_tasks)})"
-                    )
-            if all_ok:
-                # Final cleanup of part files on successful verify.
-                _maybe_merge(results, cleanup=True)
-                break
-
-            bad_tasks = [t for fr in file_results for t in fr.bad_tasks]
-            if not bad_tasks:
-                raise click.ClickException(
-                    "md5 mismatch but no chunk identified as corrupt; the "
-                    "streamed bytes may not match the real source file. "
-                    "Refusing to retry blindly."
-                )
-            if attempt > max_retries:
-                raise click.ClickException(
-                    f"md5 mismatch after {max_retries} retries; giving up. "
-                    f"{len(bad_tasks)} chunk(s) still bad."
+        for task in tasks:
+            if task.src_path not in file_tasks:
+                file_tasks[task.src_path] = progress.add_task(
+                    f"{direction.capitalize()} {task.filename}",
+                    total=task.total_size,
                 )
 
-            click.echo(f"[retry] re-transmitting {len(bad_tasks)} corrupt chunk(s) ...")
-            new_results = _execute(bad_tasks)
-            _report_spot_check_failures(new_results)
-            # Replace old results for bad tasks with new ones.
-            new_by_id = {id(r.task): r for r in new_results}
-            results = [new_by_id.get(id(r.task), r) for r in results]
-            # Re-merge after retry (idempotent overwrite).
-            _maybe_merge(results, cleanup=False)
-            total = sum(r.bytes_done for r in results)
+        def cb(task: FileTask, bytes_done: int) -> None:
+            key = task.src_path
+            with lock:
+                # bytes_done may be negative on spot-check rewind
+                chunk_key = f"{key}:{task.chunk_index}"
+                prev = file_progress.get(chunk_key, 0)
+                file_progress[chunk_key] = max(
+                    0, prev + bytes_done if bytes_done < 0 else bytes_done,
+                )
+                total_done = sum(
+                    v for k, v in file_progress.items()
+                    if k.startswith(f"{key}:")
+                )
+                progress.update(file_tasks[key], completed=total_done)
 
-    click.echo(
-        f"[OK] {direction.capitalize()} complete: {total} bytes "
-        f"({total_files} file(s), {n_workers} workers)."
-    )
+        return execute_transfer(
+            tasks, src_factory, dst_factory,
+            n_workers=n_workers, callback=cb,
+        )
 
 
 # ──── ssh-pipe (rsync/scp -e bridge) ─────────────────────────────
@@ -1056,7 +623,7 @@ def ssh_pipe_cmd(
     Example:
         rsync -avz -e 'jms ssh-pipe' ./local/ my-asset@my-server:/data/
     """
-    from jms.ssh_pipe import run_bridge
+    from jms.io.ssh_pipe import run_bridge
 
     if user is not None:  # classic rsync: -l asset server cmd...
         asset_name, rest = user, list(args)
@@ -1079,6 +646,18 @@ def ssh_pipe_cmd(
         sys.stderr.write(f"jms ssh-pipe: fatal: {e}\n")
         code = 1
     ctx.exit(code or 0)
+
+
+# ──── mcp (local stdio MCP server) ──────────────────────────────
+
+
+@cli.command("mcp")
+@click.option("--config", "config_path", default=None, hidden=True)
+def cmd_mcp(config_path: str | None) -> None:
+    """Start a local MCP stdio server exposing jms tools to AI assistants."""
+    from jms.mcp.server import main as mcp_main
+
+    mcp_main(config_path)
 
 
 # ──── entry point ───────────────────────────────────────────────

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import Optional
 
-from jms.auth import JMSSession
+from jms.core.auth import JMSSession
 from jms.exceptions import AssetError
 
 

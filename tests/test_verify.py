@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tests for jms.verify — all remote calls mocked, local files via tmp_path."""
+"""Tests for jms.io.verify — all remote calls mocked, local files via tmp_path."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import hashlib
 from dataclasses import dataclass
 from unittest.mock import Mock
 
-from jms.verify import (
+from jms.io.verify import (
     LocalHasher,
     RemoteHasher,
     _parse_md5_line,
@@ -22,7 +22,7 @@ CONTENT_MD5 = hashlib.md5(CONTENT).hexdigest()
 
 @dataclass(frozen=True)
 class FakeTask:
-    """Duck-typed stand-in for jms.transfer.FileTask."""
+    """Duck-typed stand-in for jms.io.transfer.FileTask."""
 
     src_path: str
     dst_path: str
@@ -38,7 +38,7 @@ class FakeTask:
 
 @dataclass(frozen=True)
 class FakeResult:
-    """Duck-typed stand-in for jms.transfer.TaskResult."""
+    """Duck-typed stand-in for jms.io.transfer.TaskResult."""
 
     task: FakeTask
     md5: str

@@ -6,37 +6,45 @@
 
 ```mermaid
 graph TD
-    subgraph L3["应用层"]
+    subgraph L6["L6 · 应用入口"]
         CLI["cli.py<br/>click 命令 · ssh-pipe 拦截 · MFA 交互 prompt"]
     end
-    subgraph L2["连接中间件"]
-        BE["backend/<br/>SSH/WS 终端 · koko transport · 连接 token"]
-        TR["transfer.py<br/>SFTP 并行 / 大文件分块 / 跨服务器中继"]
-        VF["verify.py<br/>传输后 md5 校验"]
-        SP["ssh_pipe.py<br/>rsync/scp -e 桥"]
+    subgraph L5["L5 · MCP 适配层"]
+        MCP["mcp/<br/>server.py · tools/{config, assets, exec, transfer}.py"]
     end
-    subgraph L1["会话与资源层"]
-        AUTH["auth.py<br/>登录 / MFA 编排（JMSSession）"]
-        HTTP["http.py<br/>REST 传输 · 分页 · APIError"]
-        RES["assets.py<br/>+ users / perms / …（管理员 feat 预留）"]
+    subgraph L4["L4 · 传输编排 + 协议层"]
+        IO["io/<br/>service.py · verify.py · ssh_pipe.py"]
+        TR["io/transfer/<br/>models · spec · sftp · openers · plan · engine"]
     end
-    subgraph L0["基础层"]
-        BASE["exceptions · log · crypto · config"]
+    subgraph L3["L3 · 连接层"]
+        TRN["transport/<br/>registry.py · base.py · token.py · ssh.py · ws.py"]
     end
-    CLI --> BE & TR & SP
-    TR --> VF
-    TR & SP --> BE
-    BE & AUTH --> HTTP
+    subgraph L2["L2 · REST 连接核心"]
+        AUTH["core/auth.py<br/>登录 / MFA 编排（JMSSession）"]
+        HTTP["core/http.py<br/>REST 传输 · 分页 · APIError"]
+        RES["core/resources/assets.py<br/>+ 未来 users / perms"]
+    end
+    subgraph L1["L1 · 配置层"]
+        CFG["config/<br/>config.py · crypto.py"]
+    end
+    subgraph L0["L0 · 地基层"]
+        BASE["exceptions.py · log.py"]
+    end
+    CLI --> MCP & IO & TRN
+    MCP --> IO & AUTH
+    IO & TR --> TRN
+    TRN --> AUTH & HTTP & RES
     RES --> HTTP
-    AUTH & BE & RES --> L0
+    AUTH & HTTP & RES --> CFG
+    CFG --> BASE
 ```
 
 ### 依赖规则
 
 1. **只许上层 import 下层**，禁止下层 import 上层、禁止平层语义越层。
-   反例（已修复方向）：`ssh_pipe.py` 曾绕过 backend 自建 `paramiko.Transport`——
-   它在使用 backend 层的内部知识（KoKo 端口、token→SSH 凭据映射），必须与
-   `backend/ssh.py` 共享 `open_koko_transport()`。
+   反例（已修复方向）：`io/ssh_pipe.py` 曾绕过 transport 自建 `paramiko.Transport`——
+   它在使用 transport 层的内部知识（KoKo 端口、token→SSH 凭据映射），必须与
+   `transport/ssh.py` 共享 `open_koko_transport()`。
 2. **库层零 CLI 关注点**：L0–L2 不得 import click / rich、不得交互输入、不得
    `sys.exit`。交互一律回调注入（如 `JMSSession(otp_prompt=...)`，默认实现由
    cli.py 提供）。诊断输出走 `jms.log` 的 named logger（stderr），绝不污染
@@ -51,16 +59,39 @@ graph TD
 |---|---|---|
 | `exceptions.py` | 异常族（JMSError 及子类，含 `APIError` 带 status_code） | 无 |
 | `log.py` | named logger，stderr，级别校验 | exceptions |
-| `crypto.py` | AES-256-GCM 加解密，PBKDF2(host+username) 派生 | exceptions |
-| `config.py` | config.yaml 读写（safe_load/safe_dump）、0600、惰性解密 | crypto, platformdirs |
-| `http.py` | REST 传输：`api_get/post/patch/delete`、分页迭代器、`APIError` | exceptions, log |
-| `auth.py` | 双重认证 + MFA 编排（otp_prompt 注入），继承 http 传输 | http |
-| `assets.py` | 资产资源：搜索/解析/账号协议选择 | http（经 auth 会话） |
-| `backend/` | KoKo 连接：token、SSH/WS 终端、`open_koko_transport` | auth, assets |
-| `verify.py` | 本地/远程 md5 比对（RemoteHasher 走终端 execute） | backend |
-| `transfer.py` | SFTP 并行/分块/中继，FileTask/TaskResult 契约 | backend, verify |
-| `ssh_pipe.py` | rsync/scp `-e` 桥，`run_bridge(asset, server, cmd) -> int` | backend, config, assets |
+| `config/crypto.py` | AES-256-GCM 加解密，PBKDF2(host+username) 派生 | exceptions |
+| `config/config.py` | config.yaml 读写（safe_load/safe_dump）、0600、惰性解密 | crypto, platformdirs |
+| `core/http.py` | REST 传输：`api_get/post/patch/delete`、分页迭代器、`APIError` | exceptions, log |
+| `core/auth.py` | 双重认证 + MFA 编排（otp_prompt 注入），继承 `core/http.py` 传输 | http |
+| `core/resources/assets.py` | 资产资源：搜索/解析/账号协议选择（`core/resources/` 为资源子包） | http（经 auth 会话） |
+| `transport/base.py` | `AbstractTerminal` 抽象 + `TerminalCapability` 枚举 + strip_ansi | 无 |
+| `transport/registry.py` | 后端注册表：`register_backend` / `open_backend` / `list_backends` / `auto_sequence`（**后端扩展点**） | base, core, exceptions |
+| `transport/token.py` | 连接 token 创建（KoKo 2222，`JMS-{id}`/token 绕过 MFA） | core, exceptions |
+| `transport/ssh.py` | KoKo SSH 终端 + `open_koko_transport`，import 时自注册 | registry, token, base, core, log, exceptions |
+| `transport/ws.py` | KoKo WebSocket 终端（二进制帧 + 应用层 PING keepalive），import 时自注册 | registry, token, base, core, log, exceptions |
+| `io/verify.py` | 本地/远程 md5 比对（RemoteHasher 走终端 execute） | transport, exceptions |
+| `io/ssh_pipe.py` | rsync/scp `-e` 桥，`run_bridge(asset, server, cmd) -> int` | transport, config, core, exceptions |
+| `io/service.py` | 传输编排：`run_transfer` / `relay_transfer` / 中继 / 重试（FileTask/TaskResult 契约） | io/transfer, verify, transport, config, core, exceptions, log |
+| `io/transfer/*.py` | models/spec/sftp/openers/plan/engine：SFTP 并行/分块/中继/`IOOpener` 抽象 | transport, verify, exceptions, log |
+| `mcp/server.py` + `mcp/tools/*.py` | MCP 适配：config/assets/exec/transfer 工具（stdio server） | io, core, config, exceptions, log |
 | `cli.py` | 全部命令走 click（含 `ssh-pipe`：参数解析在 cli，桥逻辑调 `run_bridge`） | 全部 |
+
+### transport 后端扩展
+
+新增连接协议（如未来的 RDP / VNC）不需要改 `connect()` 或 `BackendType`：
+
+1. 新建 `transport/<proto>.py`，实现 `AbstractTerminal`（`execute` / `interactive` /
+   `close` / `backend_name`，`capabilities` 类属性声明能力），并提供
+   `open_<proto>_terminal(session, asset) -> <Proto>Terminal`。
+2. 模块底部调用 `register_backend("<proto>", open_<proto>_terminal,
+   frozenset({...}))` 自注册（ssh.py / ws.py 即为模板，见
+   `transport/ssh.py:382`）。
+3. `connect()` 与 `BackendType.AUTO`（`transport/registry.py` 的 `_AUTO_SEQUENCE`）
+   无需改动；显式选型走 `open_backend(name, session, asset)`。
+
+`TerminalCapability`：`EXEC`（无头执行）/ `INTERACTIVE`（交互 PTY）/
+`DISPLAY`（预留 RDP/VNC，当前无注册）。能力标志仅为注册表与 UI 元数据，
+后端无论标志如何都实现同一套抽象接口。
 
 ### 基于 CLI 的操作（发布面参考）
 
@@ -132,25 +163,26 @@ MFA 字段差异、WS 二进制帧、marker×2），mock 只能证明"代码按�
   sender 干等请求同样挂死。已排除：版本不兼容（原生管道 3.4.4←3.2.7 下载
   md5 一致）、桥字节损坏（cat 5MB / 双向 echo 2MB / 突发 32KB×100 均
   byte-perfect）。**缓解**：下载走 `jms sftp`（已验证 md5 一致），rsync
-  仅用于上传方向；潜在修复方向是延迟 EOF（relay_out 收完再 shutdown_write），
-  待验证。见 `ssh_pipe.py`。
+   仅用于上传方向；潜在修复方向是延迟 EOF（relay_out 收完再 shutdown_write），
+   待验证。见 `io/ssh_pipe.py`。
 
 ## 4. TODO 规划
 
 ### 近期（当前开发线）
 
-- [x] `auth.py` 拆出 `http.py`（REST 传输泛化 + 分页 + `APIError`）
+- [x] `core/auth.py` 拆出 `core/http.py`（REST 传输泛化 + 分页 + `APIError`）
 - [x] `jms/__init__.py` 公开 API 导出
-- [x] `open_koko_transport()` 共享，ssh_pipe 删手工 Transport
-- [x] `transfer.py` 落地（verify 的 FileTask/TaskResult 契约转正）
+- [x] `open_koko_transport()` 共享（`transport/ssh.py`），`io/ssh_pipe.py` 删手工 Transport
+- [x] 传输落地（`io/service.py` + `io/transfer/`，verify 的 FileTask/TaskResult 契约转正）
 - [x] `cli.py` 全命令落地后删除 `terminal.py` 转发门面（连同 F401 豁免）
+- [x] 分层重构：扁平布局 → `config/` `core/` `transport/` `io/` `mcp/` 五层包，公开 API 收敛于 `jms/__init__.py`（符号面不变）
 - [ ] 测试重组：删脆弱 mock，补 token / ssh-pipe / CLI e2e 真实用例
 
 ### feat 规划（架构已预留，暂不开发）
 
-- [ ] **管理员操作**：资产 CRUD、用户管理、授权管理——在 `http.py` 地基上
-      平级新增 `users.py` / `perms.py` 等资源模块（扁平结构，≥3 个资源
-      模块再考虑 `resources/` 子包）
+- [ ] **管理员操作**：资产 CRUD、用户管理、授权管理——在 `core/` 地基上
+      平级新增 `core/resources/users.py` / `perms.py` 等资源模块（已有
+      `assets.py` 在 `core/resources/` 内，新资源模块并入同一子包）
 - [ ] **GitHub Actions CI**：纯函数 + 解析回归全跑，真实服务器测试自动 skip
 - [ ] **依赖审计**：`uvx pip-audit` 入 CI；评估 paramiko/cryptography 主版本上界
 - [ ] 资产 >100 时分页精确匹配（`search_assets` limit 硬编码退化问题）

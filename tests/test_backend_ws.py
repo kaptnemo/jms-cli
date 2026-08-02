@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tests for jms.backend.ws — websocket.create_connection 全部 mock。"""
+"""Tests for jms.transport.ws — websocket.create_connection 全部 mock。"""
 
 import json
 import re
@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 import websocket
 
-from jms.assets import AssetInfo
-from jms.backend.ws import WSTerminal, connect_ws
+from jms.core.resources import AssetInfo
+from jms.transport.ws import WSTerminal, connect_ws
 from jms.exceptions import TerminalError
 
 ASSET = AssetInfo(
@@ -64,7 +64,7 @@ def _connect_frames() -> list:
 
 def _patch_create(monkeypatch: pytest.MonkeyPatch, ws) -> MagicMock:
     factory = MagicMock(return_value=ws)
-    monkeypatch.setattr("jms.backend.ws.websocket.create_connection", factory)
+    monkeypatch.setattr("jms.transport.ws.websocket.create_connection", factory)
     return factory
 
 
@@ -116,7 +116,7 @@ def test_connect_ws_retries_with_fresh_token(
     """握手失败自动重建令牌重试一次。"""
     ws = FakeWebSocket(_connect_frames())
     factory = MagicMock(side_effect=[Exception("handshake boom"), ws])
-    monkeypatch.setattr("jms.backend.ws.websocket.create_connection", factory)
+    monkeypatch.setattr("jms.transport.ws.websocket.create_connection", factory)
     session = _session()
 
     with connect_ws(session, ASSET):
@@ -130,7 +130,7 @@ def test_connect_ws_retry_also_fails_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     factory = MagicMock(side_effect=Exception("boom"))
-    monkeypatch.setattr("jms.backend.ws.websocket.create_connection", factory)
+    monkeypatch.setattr("jms.transport.ws.websocket.create_connection", factory)
 
     with pytest.raises(TerminalError, match="WebSocket connection"):
         with connect_ws(_session(), ASSET):
@@ -245,7 +245,7 @@ def test_heartbeat_sends_app_level_ping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """心跳是文本帧 JSON PING（不是 WS opcode 0x9）。"""
-    monkeypatch.setattr("jms.backend.ws.HEARTBEAT_INTERVAL", 0.05)
+    monkeypatch.setattr("jms.transport.ws.HEARTBEAT_INTERVAL", 0.05)
     ws = FakeWebSocket()
     term = WSTerminal(ws, "ws-uuid-1")
 

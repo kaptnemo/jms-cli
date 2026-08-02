@@ -1,6 +1,6 @@
 [project]
 name = "jms-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "JumpServer v4 bastion asset access CLI + lib: exec, login, SFTP transfer, rsync over ssh-pipe"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,6 +11,7 @@ authors = [
 dependencies = [
     "click>=8.0,<9",
     "cryptography>=41.0,<46",
+    "mcp>=2.0,<3",
     "paramiko>=4.0.0,<5",
     "platformdirs>=4.0,<6",
     "pyotp>=2.9.0,<3",

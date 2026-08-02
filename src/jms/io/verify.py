@@ -21,13 +21,11 @@ from __future__ import annotations
 import hashlib
 import shlex
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable
+from typing import Iterable
 
-from jms.backend import AbstractTerminal
+from jms.io.transfer.models import FileTask, TaskResult
+from jms.transport import AbstractTerminal
 from jms.log import logger
-
-if TYPE_CHECKING:  # duck-typed at runtime; avoids a hard import cycle
-    from jms.transfer import FileTask, TaskResult
 
 # Generous timeout for md5sum of multi-GB files (~30s per GB worst case)
 MD5_FULL_TIMEOUT: int = 1800

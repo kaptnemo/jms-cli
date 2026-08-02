@@ -25,10 +25,16 @@ from urllib.parse import urlparse
 
 import websocket
 
-from jms.assets import AssetInfo
-from jms.auth import JMSSession
-from jms.backend.base import AbstractTerminal, local_tty_size, strip_ansi
-from jms.backend.token import create_connection_token
+from jms.core.resources import AssetInfo
+from jms.core.auth import JMSSession
+from jms.transport.base import (
+    AbstractTerminal,
+    TerminalCapability,
+    local_tty_size,
+    strip_ansi,
+)
+from jms.transport.registry import register_backend
+from jms.transport.token import create_connection_token
 from jms.exceptions import TerminalError
 from jms.log import logger
 
@@ -74,6 +80,8 @@ class WSTerminal(AbstractTerminal):
         ws: Connected WebSocket instance.
         ws_id: Session UUID from the CONNECT message.
     """
+
+    capabilities = frozenset({TerminalCapability.EXEC, TerminalCapability.INTERACTIVE})
 
     def __init__(self, ws: websocket.WebSocket, ws_id: str) -> None:
         self._ws: websocket.WebSocket = ws
@@ -559,3 +567,10 @@ def connect_ws(session: JMSSession, asset: AssetInfo) -> Iterator[WSTerminal]:
         yield terminal
     finally:
         terminal.close()
+
+
+register_backend(
+    "ws",
+    open_ws_terminal,
+    frozenset({TerminalCapability.EXEC, TerminalCapability.INTERACTIVE}),
+)

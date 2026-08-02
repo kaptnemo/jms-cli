@@ -32,9 +32,9 @@ import sys
 import threading
 from urllib.parse import urlparse
 
-from jms.assets import resolve_asset
-from jms.auth import JMSSession
-from jms.backend import open_koko_transport
+from jms.core.resources import resolve_asset
+from jms.core.auth import JMSSession
+from jms.transport import open_koko_transport
 from jms.config import load_config
 from jms.log import logger
 

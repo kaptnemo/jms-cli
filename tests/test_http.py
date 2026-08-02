@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from jms.exceptions import APIError, AuthError
-from jms.http import RESTClient
+from jms.core.http import RESTClient
 
 BASE = "https://jump.example.com"
 

@@ -18,10 +18,15 @@ from urllib.parse import urlparse
 
 import paramiko
 
-from jms.assets import AssetInfo
-from jms.auth import JMSSession
-from jms.backend.base import AbstractTerminal, local_tty_size
-from jms.backend.token import KOKO_SSH_PORT, create_connection_token
+from jms.core.resources import AssetInfo
+from jms.core.auth import JMSSession
+from jms.transport.base import (
+    AbstractTerminal,
+    TerminalCapability,
+    local_tty_size,
+)
+from jms.transport.registry import register_backend
+from jms.transport.token import KOKO_SSH_PORT, create_connection_token
 from jms.exceptions import TerminalError
 from jms.log import logger
 
@@ -46,6 +51,8 @@ class SSHTerminal(AbstractTerminal):
     Args:
         transport: An authenticated paramiko Transport.
     """
+
+    capabilities = frozenset({TerminalCapability.EXEC, TerminalCapability.INTERACTIVE})
 
     def __init__(self, transport: paramiko.Transport) -> None:
         self._transport: paramiko.Transport = transport
@@ -370,3 +377,10 @@ def connect_ssh(session: JMSSession, asset: AssetInfo) -> Iterator[SSHTerminal]:
         yield terminal
     finally:
         terminal.close()
+
+
+register_backend(
+    "ssh",
+    open_ssh_terminal,
+    frozenset({TerminalCapability.EXEC, TerminalCapability.INTERACTIVE}),
+)

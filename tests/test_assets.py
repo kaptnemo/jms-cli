@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from jms.assets import (
+from jms.core.resources import (
     AssetInfo,
     get_asset_detail,
     list_assets,
@@ -15,7 +15,7 @@ from jms.assets import (
     select_protocol,
 )
 from jms.exceptions import AssetError
-from jms.http import RESTClient
+from jms.core.http import RESTClient
 
 ASSET_SRV1 = {
     "id": "uuid-1",

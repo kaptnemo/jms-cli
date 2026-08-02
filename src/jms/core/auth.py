@@ -13,7 +13,7 @@ import requests
 
 from jms.config import ServerConfig
 from jms.exceptions import APIError, AuthError, MFARequired
-from jms.http import HTTP_TIMEOUT, RESTClient
+from jms.core.http import HTTP_TIMEOUT, RESTClient
 from jms.log import logger
 
 

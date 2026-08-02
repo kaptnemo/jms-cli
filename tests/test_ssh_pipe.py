@@ -1,4 +1,4 @@
-"""Tests for jms.ssh_pipe.run_bridge — all I/O mocked, no real server.
+"""Tests for jms.io.ssh_pipe.run_bridge — all I/O mocked, no real server.
 
 Argument parsing (classic vs openrsync form) is a CLI-layer concern and
 lives in tests/test_cli.py.
@@ -11,7 +11,7 @@ from unittest import mock
 import pytest
 
 from jms.exceptions import AssetError, ConfigError, TerminalError
-from jms.ssh_pipe import run_bridge
+from jms.io.ssh_pipe import run_bridge
 
 
 @pytest.fixture()
@@ -31,13 +31,13 @@ def patched() -> Any:
     asset = mock.MagicMock()
     cfg = mock.MagicMock()
 
-    with mock.patch("jms.ssh_pipe.load_config", return_value=cfg) as m_cfg, \
-            mock.patch("jms.ssh_pipe.JMSSession", return_value=session) as m_sess, \
-            mock.patch("jms.ssh_pipe.resolve_asset", return_value=asset) as m_res, \
-            mock.patch("jms.ssh_pipe.open_koko_transport",
+    with mock.patch("jms.io.ssh_pipe.load_config", return_value=cfg) as m_cfg, \
+            mock.patch("jms.io.ssh_pipe.JMSSession", return_value=session) as m_sess, \
+            mock.patch("jms.io.ssh_pipe.resolve_asset", return_value=asset) as m_res, \
+            mock.patch("jms.io.ssh_pipe.open_koko_transport",
                        return_value=transport) as m_tp, \
-            mock.patch("jms.ssh_pipe.os.read", return_value=b""), \
-            mock.patch("jms.ssh_pipe.os.write"), \
+            mock.patch("jms.io.ssh_pipe.os.read", return_value=b""), \
+            mock.patch("jms.io.ssh_pipe.os.write"), \
             mock.patch.object(sys, "stdin", mock.MagicMock(fileno=lambda: 0)), \
             mock.patch.object(sys, "stdout", mock.MagicMock(fileno=lambda: 1)), \
             mock.patch.object(sys, "stderr",
@@ -71,7 +71,7 @@ class TestHappyPath:
 
 class TestErrorPaths:
     def test_config_missing_raises(self) -> None:
-        with mock.patch("jms.ssh_pipe.load_config",
+        with mock.patch("jms.io.ssh_pipe.load_config",
                         side_effect=ConfigError("no config")):
             with pytest.raises(ConfigError):
                 run_bridge("web-01", "prod", "true")

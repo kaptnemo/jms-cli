@@ -24,13 +24,13 @@ from urllib.parse import urlparse
 import pytest
 from click.testing import CliRunner
 
-from jms.assets import resolve_asset, search_assets
-from jms.auth import JMSSession
-from jms.backend import BackendType, connect, create_connection_token
+from jms.core.resources import resolve_asset, search_assets
+from jms.core.auth import JMSSession
+from jms.transport import BackendType, connect, create_connection_token
 from jms.cli import cli
 from jms.config import ServerConfig, add_server, config_file_path
 from jms.exceptions import ConnectionTokenError, TransferError
-from jms.transfer import connect_sftp
+from jms.io.transfer import connect_sftp
 
 _ENV_VARS = ["JMS_TEST_HOST", "JMS_TEST_USERNAME", "JMS_TEST_PASSWORD"]
 

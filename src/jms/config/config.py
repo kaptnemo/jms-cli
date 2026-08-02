@@ -15,7 +15,7 @@ from typing import Optional
 import yaml
 from platformdirs import user_config_dir
 
-from jms.crypto import decrypt, encrypt, is_encrypted
+from jms.config.crypto import decrypt, encrypt, is_encrypted
 from jms.exceptions import ConfigError
 
 # Application name used by platformdirs to resolve the config directory.

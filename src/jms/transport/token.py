@@ -7,8 +7,8 @@ terminal URL carries ``token_id`` directly. Token authentication
 bypasses MFA.
 """
 
-from jms.assets import AssetInfo
-from jms.auth import JMSSession
+from jms.core.resources import AssetInfo
+from jms.core.auth import JMSSession
 from jms.exceptions import ConnectionTokenError
 
 # KoKo SSH port (shared by terminal and SFTP)

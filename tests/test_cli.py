@@ -21,8 +21,8 @@ from jms.cli import cli, main, parse_target
 from jms.config import AppConfig, ServerConfig, load_config
 from jms.exceptions import AuthError, ConfigError
 from jms.log import logger
-from jms.transfer import FileTask, TaskResult
-from jms.verify import FileVerifyResult
+from jms.io.transfer import FileTask, TaskResult
+from jms.io.verify import FileVerifyResult
 
 
 def _null_cm():
@@ -75,7 +75,7 @@ def test_ssh_pipe_arg_forms(
     monkeypatch: pytest.MonkeyPatch, runner: CliRunner, argv: list[str],
 ) -> None:
     calls: dict = {}
-    monkeypatch.setattr("jms.ssh_pipe.run_bridge", _spy_bridge(calls, code=42))
+    monkeypatch.setattr("jms.io.ssh_pipe.run_bridge", _spy_bridge(calls, code=42))
     result = runner.invoke(cli, argv)
     assert result.exit_code == 42  # bridge return value becomes the exit code
     assert calls["asset"] == "web-01"
@@ -99,7 +99,7 @@ def test_ssh_pipe_fatal_never_tracebacks(
     def boom(asset: str, server: str, cmd: str, config_path: str | None) -> int:
         raise RuntimeError("kaput")
 
-    monkeypatch.setattr("jms.ssh_pipe.run_bridge", boom)
+    monkeypatch.setattr("jms.io.ssh_pipe.run_bridge", boom)
     result = runner.invoke(cli, ["ssh-pipe", "web-01@prod", "true"])
     assert result.exit_code == 1
     assert "jms ssh-pipe: fatal: kaput" in result.output
@@ -286,9 +286,9 @@ class _FakeSession:
 
 def test_ls_lists_assets(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
     monkeypatch.setattr("jms.cli.load_config", lambda path=None: _fake_config())
-    monkeypatch.setattr("jms.auth.JMSSession", _FakeSession)
+    monkeypatch.setattr("jms.core.auth.JMSSession", _FakeSession)
     monkeypatch.setattr(
-        "jms.assets.list_assets",
+        "jms.core.resources.list_assets",
         lambda session, limit=50: [{
             "name": "web-01", "address": "10.0.0.1",
             "platform": {"name": "Linux"}, "type": {"label": "Host"},
@@ -312,8 +312,8 @@ def test_ls_unknown_server_alias(
 
 def test_ls_no_assets(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
     monkeypatch.setattr("jms.cli.load_config", lambda path=None: _fake_config())
-    monkeypatch.setattr("jms.auth.JMSSession", _FakeSession)
-    monkeypatch.setattr("jms.assets.list_assets", lambda session, limit=50: [])
+    monkeypatch.setattr("jms.core.auth.JMSSession", _FakeSession)
+    monkeypatch.setattr("jms.core.resources.list_assets", lambda session, limit=50: [])
     result = runner.invoke(cli, ["ls"])
     assert result.exit_code == 0
     assert "No assets found." in result.output
@@ -325,7 +325,7 @@ def test_ls_no_assets(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> Non
 def test_config_add_validates_then_saves(
     monkeypatch: pytest.MonkeyPatch, runner: CliRunner, tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("jms.auth.JMSSession", _FakeSession)
+    monkeypatch.setattr("jms.core.auth.JMSSession", _FakeSession)
     cfg_path = tmp_path / "config.yaml"
     result = runner.invoke(
         cli,
@@ -357,7 +357,7 @@ def test_config_add_rejects_bad_credentials(
         def login(self) -> None:
             raise AuthError("bad credentials")
 
-    monkeypatch.setattr("jms.auth.JMSSession", _BadSession)
+    monkeypatch.setattr("jms.core.auth.JMSSession", _BadSession)
     cfg_path = tmp_path / "config.yaml"
     result = runner.invoke(
         cli,
@@ -436,9 +436,9 @@ def test_run_transfer_retries_bad_chunks_then_succeeds(
     monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     """md5 mismatch round 1 → bad chunk re-transmitted → round 2 ok."""
-    from jms.cli import _run_transfer
-    from jms.transfer import ChunkPolicy, ChunkSplitPolicy, FileInfo
-    from jms.verify import FileVerifyResult
+    from jms.io.service import run_transfer
+    from jms.io.transfer import ChunkPolicy, ChunkSplitPolicy, FileInfo
+    from jms.io.verify import FileVerifyResult
 
     task = _mk_file_task()
     calls: dict[str, int] = {"n": 0}
@@ -455,11 +455,11 @@ def test_run_transfer_retries_bad_chunks_then_succeeds(
             )]
         return [_ok_result("/s/f", "/d/f")]
 
-    monkeypatch.setattr("jms.transfer.execute_transfer", fake_execute)
-    monkeypatch.setattr("jms.verify.verify_files", fake_verify)
+    monkeypatch.setattr("jms.io.transfer.execute_transfer", fake_execute)
+    monkeypatch.setattr("jms.io.verify.verify_files", fake_verify)
 
     files = [FileInfo(src_path="/s/f", dst_path="/d/f", size=10)]
-    _run_transfer(
+    run_transfer(
         files, src_factory=MagicMock(), dst_factory=MagicMock(), direction="upload",
         n_workers=1, policy=ChunkPolicy.FULL,
         split_policy=ChunkSplitPolicy.SEEK,
@@ -473,11 +473,11 @@ def test_run_transfer_retries_bad_chunks_then_succeeds(
 def test_run_transfer_gives_up_after_max_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Persistent mismatch → ClickException after max_retries."""
-    from click.exceptions import ClickException
-    from jms.cli import _run_transfer
-    from jms.transfer import ChunkPolicy, ChunkSplitPolicy, FileInfo
-    from jms.verify import FileVerifyResult
+    """Persistent mismatch → TransferError after max_retries."""
+    from jms.exceptions import TransferError
+    from jms.io.service import run_transfer
+    from jms.io.transfer import ChunkPolicy, ChunkSplitPolicy, FileInfo
+    from jms.io.verify import FileVerifyResult
 
     task = _mk_file_task()
 
@@ -490,12 +490,12 @@ def test_run_transfer_gives_up_after_max_retries(
             dst_md5="b" * 32, ok=False, bad_tasks=(task,),
         )]
 
-    monkeypatch.setattr("jms.transfer.execute_transfer", fake_execute)
-    monkeypatch.setattr("jms.verify.verify_files", fake_verify)
+    monkeypatch.setattr("jms.io.transfer.execute_transfer", fake_execute)
+    monkeypatch.setattr("jms.io.verify.verify_files", fake_verify)
 
     files = [FileInfo(src_path="/s/f", dst_path="/d/f", size=10)]
-    with pytest.raises(ClickException, match="giving up"):
-        _run_transfer(
+    with pytest.raises(TransferError, match="giving up"):
+        run_transfer(
             files, src_factory=MagicMock(), dst_factory=MagicMock(), direction="upload",
             n_workers=1, policy=ChunkPolicy.FULL,
             split_policy=ChunkSplitPolicy.SEEK,

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pyotp
 import pytest
 
-from jms.auth import JMSSession
+from jms.core.auth import JMSSession
 from jms.config import ServerConfig
 from jms.exceptions import APIError, AuthError, MFARequired
 

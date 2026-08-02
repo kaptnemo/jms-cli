@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Tests for jms.backend.token — api_post 全部 mock，不连真实服务器。"""
+"""Tests for jms.transport.token — api_post 全部 mock，不连真实服务器。"""
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from jms.assets import AssetInfo
-from jms.backend.token import TOKEN_API_PATH, create_connection_token
+from jms.core.resources import AssetInfo
+from jms.transport.token import TOKEN_API_PATH, create_connection_token
 from jms.exceptions import ConnectionTokenError
 
 ASSET = AssetInfo(

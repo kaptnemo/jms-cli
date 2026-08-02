@@ -24,7 +24,7 @@ class RESTClient:
 
     Holds the shared session plus the credential material the API expects
     on every call (Bearer token, CSRF token). Subclassed by
-    ``jms.auth.JMSSession``, which fills the tokens in during login.
+    ``jms.core.auth.JMSSession``, which fills the tokens in during login.
 
     Args:
         base_url: Base URL of the JumpServer instance (no trailing slash).

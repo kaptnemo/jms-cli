@@ -3,7 +3,7 @@
 
 import pytest
 
-from jms.crypto import ENC_PREFIX, decrypt, encrypt, is_encrypted
+from jms.config.crypto import ENC_PREFIX, decrypt, encrypt, is_encrypted
 
 HOST = "jump.example.com"
 USER = "alice"

@@ -1,12 +1,12 @@
-"""Tests for jms.backend.ssh — paramiko/socket fully mocked, no real server."""
+"""Tests for jms.transport.ssh — paramiko/socket fully mocked, no real server."""
 
 import socket
 from unittest.mock import MagicMock
 
 import pytest
 
-from jms.assets import AssetInfo
-from jms.backend.ssh import SSHTerminal, connect_ssh, open_koko_transport
+from jms.core.resources import AssetInfo
+from jms.transport.ssh import SSHTerminal, connect_ssh, open_koko_transport
 from jms.exceptions import TerminalError
 
 ASSET = AssetInfo(
@@ -25,10 +25,10 @@ def _session() -> MagicMock:
 def _mock_net(monkeypatch: pytest.MonkeyPatch, transports: list) -> None:
     """Mock socket.create_connection + paramiko.Transport."""
     monkeypatch.setattr(
-        "jms.backend.ssh.socket.create_connection", MagicMock(return_value=MagicMock()),
+        "jms.transport.ssh.socket.create_connection", MagicMock(return_value=MagicMock()),
     )
     monkeypatch.setattr(
-        "jms.backend.ssh.paramiko.Transport", MagicMock(side_effect=transports),
+        "jms.transport.ssh.paramiko.Transport", MagicMock(side_effect=transports),
     )
 
 
@@ -133,7 +133,7 @@ def test_execute_overall_deadline_with_chatty_command(
     channel.recv_stderr_ready.return_value = False
 
     clock = [0.0]
-    monkeypatch.setattr("jms.backend.ssh.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("jms.transport.ssh.time.monotonic", lambda: clock[0])
 
     def _chatty_recv(_size: int) -> bytes:
         clock[0] += 10.0  # each recv yields output instantly, advancing time

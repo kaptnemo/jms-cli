@@ -15,9 +15,9 @@ from typing import Callable
 
 import pytest
 
-from jms import verify
+from jms.io import verify as io_verify
 from jms.exceptions import TerminalError, TransferError
-from jms.transfer import (
+from jms.io.transfer import (
     ChunkPolicy,
     ChunkSplitPolicy,
     FileInfo,
@@ -67,7 +67,7 @@ class FakeRemoteFS:
     def content(self, path: str) -> bytes:
         return bytes(self.files[path])
 
-    # wrapper-level API (mirrors jms.transfer.SFTPClient) -----------
+    # wrapper-level API (mirrors jms.io.transfer.SFTPClient) -----------
 
     def new_channel(self) -> "FakeSFTPChannel":
         return FakeSFTPChannel(self)
@@ -383,7 +383,7 @@ def test_plan_single_worker_disables_chunking() -> None:
 
 
 def test_verify_contract_grouping() -> None:
-    """FileTask/TaskResult fields satisfy the jms.verify contract."""
+    """FileTask/TaskResult fields satisfy the jms.io.verify contract."""
     tasks = plan_transfer(
         [FileInfo("/a/big.bin", "/b/big.bin", 100)],
         n_workers=2, chunk_threshold=10,
@@ -395,7 +395,7 @@ def test_verify_contract_grouping() -> None:
     results = [
         TaskResult(task=x, bytes_done=x.chunk_size, md5="d" * 32) for x in tasks
     ]
-    groups = verify.group_tasks_by_file(r.task for r in results)
+    groups = io_verify.group_tasks_by_file(r.task for r in results)
     assert list(groups) == [("/a/big.bin", "/b/big.bin")]
 
     merged = group_parts_by_merge_target(results)
@@ -656,9 +656,9 @@ def test_connect_sftp_success(monkeypatch: pytest.MonkeyPatch) -> None:
         captured.update(kwargs)
         return transport
 
-    monkeypatch.setattr("jms.transfer.open_koko_transport", fake_open)
+    monkeypatch.setattr("jms.io.transfer.sftp.open_koko_transport", fake_open)
     monkeypatch.setattr(
-        "jms.transfer.paramiko.SFTPClient.from_transport", lambda t: raw,
+        "jms.io.transfer.sftp.paramiko.SFTPClient.from_transport", lambda t: raw,
     )
 
     client = connect_sftp(object(), object())
@@ -675,7 +675,7 @@ def test_connect_sftp_wraps_terminal_error(monkeypatch: pytest.MonkeyPatch) -> N
     def boom(session: object, asset: object, **kwargs: object) -> object:
         raise TerminalError("handshake failed")
 
-    monkeypatch.setattr("jms.transfer.open_koko_transport", boom)
+    monkeypatch.setattr("jms.io.transfer.sftp.open_koko_transport", boom)
     with pytest.raises(TransferError, match="SFTP connection failed"):
         connect_sftp(object(), object())
 
@@ -685,14 +685,14 @@ def test_connect_sftp_channel_failure_closes_transport(
 ) -> None:
     transport = _FakeTransport()
     monkeypatch.setattr(
-        "jms.transfer.open_koko_transport", lambda s, a, **kw: transport,
+        "jms.io.transfer.sftp.open_koko_transport", lambda s, a, **kw: transport,
     )
 
     def boom(t: object) -> object:
         raise RuntimeError("subsystem rejected")
 
     monkeypatch.setattr(
-        "jms.transfer.paramiko.SFTPClient.from_transport", boom,
+        "jms.io.transfer.sftp.paramiko.SFTPClient.from_transport", boom,
     )
     with pytest.raises(TransferError, match="SFTP channel failed"):
         connect_sftp(object(), object())

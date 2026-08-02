@@ -7,6 +7,7 @@ so upper layers (transfer/cli) can switch backends transparently.
 import re
 import shutil
 from abc import ABC, abstractmethod
+from enum import Enum
 
 # ANSI escape sequences (CSI / OSC / backspace overstrike)
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x08.")
@@ -23,6 +24,19 @@ def local_tty_size() -> tuple[int, int]:
     return size.columns, size.lines
 
 
+class TerminalCapability(Enum):
+    """Capabilities a terminal backend may offer.
+
+    Metadata for the backend registry / UI only — backends still implement
+    the abstract ``execute()`` / ``interactive()`` regardless of flags.
+    ``DISPLAY`` is reserved for future RDP/VNC-style backends.
+    """
+
+    EXEC = "exec"
+    INTERACTIVE = "interactive"
+    DISPLAY = "display"
+
+
 class AbstractTerminal(ABC):
     """Abstract terminal session to a JumpServer asset.
 
@@ -30,6 +44,8 @@ class AbstractTerminal(ABC):
     ``interactive()`` (interactive PTY relay) and ``close()`` (resource
     cleanup).
     """
+
+    capabilities: frozenset[TerminalCapability] = frozenset()
 
     @abstractmethod
     def execute(self, command: str, timeout: int = 30, check: bool = False) -> str:

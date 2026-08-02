@@ -16,6 +16,8 @@ incremental sync via an SSH bridge.
 - `jms sftp` — parallel SFTP upload/download, chunked large files, cross-server relay
 - `jms ssh-pipe` — `-e` bridge for `rsync` / `scp`
 - Multi-server config, MFA (TOTP) support, AES-256-GCM encrypted credentials
+- Local MCP stdio server (`jms mcp`) exposing config/asset/exec/SFTP as tools
+  for AI assistants
 - Usable as a Python library (`from jms import JMSSession, connect, ...`)
 
 ## Install
@@ -129,11 +131,47 @@ with connect(sess, asset, backend=BackendType.AUTO) as term:
     print(term.execute("uname -a"))
 ```
 
+## MCP server (AI assistants)
+
+`jms mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io/)
+stdio server exposing jms-cli as MCP tools for AI assistants / MCP clients.
+Every tool opens a fresh authenticated session per call (stateless, no shared
+state). No interactive PTY is used — all tools are headless operations.
+
+Register it in your MCP client config, e.g. opencode (`.opencode/opencode.json`):
+
+```json
+{
+  "mcp": {
+    "jumpserver": {
+      "type": "local",
+      "command": ["uv", "run", "jms", "mcp"]
+    }
+  }
+}
+```
+
+### Tools
+
+| Tool | Description |
+|---|---|
+| `jms_config_list` | List configured servers (default marked with `*`) |
+| `jms_ls` | List / keyword-search authorized assets |
+| `jms_resolve_asset` | Resolve an asset to connection info (address/account/protocol) |
+| `jms_exec` | Run a command on an asset, return output (`timeout` param) |
+| `jms_sftp_upload` | Upload a local file to an asset via SFTP |
+| `jms_sftp_download` | Download a file from an asset to the local machine |
+| `jms_sftp_relay` | Relay a file between two assets (memory-streamed, no local disk) |
+
+Each tool accepts an optional `server` alias (defaults to the configured
+default) and an optional `config_path`. The server-wide default config path
+falls back to the `JMS_CONFIG` env var, then the platform config dir.
+
 ## Roadmap / TODO
 
 - [ ] Admin operations (JumpServer management API): asset CRUD, user
-      management, permission/grant management — the REST layer (`http.py`) is
-      designed for these resource modules
+      management, permission/grant management — the REST layer (`jms/core/`)
+      is designed for these resource modules
 - [x] GitHub Actions CI (pure unit tests always run; real-server tests
       auto-skip without `JMS_TEST_*` env vars)
 - [x] PyPI + GitHub release on tag push
