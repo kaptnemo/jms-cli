@@ -1,0 +1,12 @@
+{
+  "eval_id": 2,
+  "eval_name": "fix-broken-config",
+  "prompt": "A user reports: Server 'qa' missing 'password'. Repair the provided config.yaml so that skills/jms-config/scripts/validate_config.py exits 0, and explain why a plaintext password also passes on read (do not modify src/jms code). Save the repaired file to the output directory.",
+  "assertions": [
+    "repaired config.yaml exists in the output directory",
+    "qa server has a non-empty password field",
+    "validate_config.py exits 0 on the repaired file",
+    "the explanation mentions is_encrypted() detection or that plaintext is accepted on read",
+    "no source under src/jms was modified"
+  ]
+}

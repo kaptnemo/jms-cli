@@ -1,0 +1,47 @@
+{
+  "expectations": [
+    {
+      "text": "create_sftp_token.py uses create_connection_token",
+      "passed": true,
+      "evidence": "uses create_connection_token"
+    },
+    {
+      "text": "the call passes protocol='ssh' (not 'sftp')",
+      "passed": true,
+      "evidence": "protocol='ssh' (matches the live-server contract)"
+    },
+    {
+      "text": "the call passes connect_method='web_sftp'",
+      "passed": true,
+      "evidence": "connect_method='web_sftp'"
+    },
+    {
+      "text": "comments explain why web_cli cannot be used for SFTP and that protocol='sftp' is rejected (perm_account_invalid)",
+      "passed": true,
+      "evidence": "comments explain web_cli not for SFTP + perm_account_invalid"
+    },
+    {
+      "text": "comments explain JMS-{id} and token_value for SSH auth on KoKo port 2222",
+      "passed": true,
+      "evidence": "comments explain JMS-{id}/token_value on KoKo 2222"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

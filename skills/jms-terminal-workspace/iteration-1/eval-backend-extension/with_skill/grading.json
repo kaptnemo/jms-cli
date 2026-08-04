@@ -1,0 +1,42 @@
+{
+  "expectations": [
+    {
+      "text": "rdp_backend.md mentions inheriting AbstractTerminal",
+      "passed": true,
+      "evidence": "rdp_backend.md inherits AbstractTerminal"
+    },
+    {
+      "text": "lists the execute / interactive / close / backend_name interfaces",
+      "passed": true,
+      "evidence": "lists execute/interactive/close/backend_name"
+    },
+    {
+      "text": "contains a register_backend('rdp', ...) self-registration skeleton",
+      "passed": true,
+      "evidence": "register_backend('rdp', open_rdp_terminal, ...) skeleton"
+    },
+    {
+      "text": "states that AUTO's default sequence ('ssh', 'ws') does not include the new backend",
+      "passed": true,
+      "evidence": "states _AUTO_SEQUENCE=('ssh','ws') excludes new backends by default"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

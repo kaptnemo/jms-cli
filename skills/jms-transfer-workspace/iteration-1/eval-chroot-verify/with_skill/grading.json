@@ -1,0 +1,42 @@
+{
+  "expectations": [
+    {
+      "text": "chroot-verify.md gives translate_remote_path('/tmp', '/data/x.bin') = '/tmp/data/x.bin'",
+      "passed": true,
+      "evidence": "translate_remote_path('/tmp','/data/x.bin') = /tmp/data/x.bin"
+    },
+    {
+      "text": "the md5sum command uses /tmp/data/x.bin with quote handling (shlex style)",
+      "passed": true,
+      "evidence": "md5sum /tmp/data/x.bin with shlex quoting note"
+    },
+    {
+      "text": "per-chunk location uses dd bs=1M iflag=skip_bytes,count_bytes skip=... count=... | md5sum",
+      "passed": true,
+      "evidence": "dd bs=1M iflag=skip_bytes,count_bytes ... | md5sum"
+    },
+    {
+      "text": "explains comparison with the worker-recorded TaskResult.md5 and no source re-read",
+      "passed": true,
+      "evidence": "explains comparison with TaskResult.md5; no source re-read"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

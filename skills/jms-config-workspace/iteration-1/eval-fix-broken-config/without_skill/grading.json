@@ -1,0 +1,47 @@
+{
+  "expectations": [
+    {
+      "text": "repaired config.yaml exists in the output directory",
+      "passed": true,
+      "evidence": "fixed config.yaml in outputs/"
+    },
+    {
+      "text": "qa server has a non-empty password field",
+      "passed": true,
+      "evidence": "qa server has non-empty password"
+    },
+    {
+      "text": "validate_config.py exits 0 on the repaired file",
+      "passed": true,
+      "evidence": "validator exit 0"
+    },
+    {
+      "text": "the explanation mentions is_encrypted() detection or that plaintext is accepted on read",
+      "passed": false,
+      "evidence": "no explanation file; plaintext-acceptance rationale absent"
+    },
+    {
+      "text": "no source under src/jms was modified",
+      "passed": true,
+      "evidence": "no src/jms changes"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.8
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

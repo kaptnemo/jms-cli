@@ -1,0 +1,12 @@
+{
+  "eval_id": 1,
+  "eval_name": "direction-detect",
+  "prompt": "Explain `jms sftp`'s automatic direction detection and give the direction plus the equivalent library API call (function name and key arguments) for each of: 1) jms sftp ./data.tar.gz web@prod:/tmp/  2) jms sftp web@prod:/tmp/data.tar.gz ./  3) jms sftp a@s1:/f b@s2:/g. Verify example 3 with skills/jms-transfer/scripts/check_sftp_spec.py and record the actual output. Save the explanation and output as direction.md in the output directory.",
+  "assertions": [
+    "direction.md explains the direction rule (colon marks a remote side)",
+    "call 1 is upload, equivalent library call sftp_transfer",
+    "call 2 is download, equivalent library call sftp_transfer (is_upload=False)",
+    "call 3 is relay, equivalent library call relay_transfer + RelaySpec",
+    "records the actual check_sftp_spec.py output for 'a@s1:/f b@s2:/g' (relay: ...)"
+  ]
+}

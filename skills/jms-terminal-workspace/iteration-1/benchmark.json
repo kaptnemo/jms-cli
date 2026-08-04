@@ -1,0 +1,223 @@
+{
+  "metadata": {
+    "skill_name": "jms-terminal",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-08-04T14:00:11Z",
+    "evals_run": [
+      1,
+      2
+    ],
+    "runs_per_configuration": 2
+  },
+  "runs": [
+    {
+      "eval_id": 2,
+      "eval_name": "backend-extension",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "rdp_backend.md mentions inheriting AbstractTerminal",
+          "passed": true,
+          "evidence": "rdp_backend.md inherits AbstractTerminal"
+        },
+        {
+          "text": "lists the execute / interactive / close / backend_name interfaces",
+          "passed": true,
+          "evidence": "lists execute/interactive/close/backend_name"
+        },
+        {
+          "text": "contains a register_backend('rdp', ...) self-registration skeleton",
+          "passed": true,
+          "evidence": "register_backend('rdp', open_rdp_terminal, ...) skeleton"
+        },
+        {
+          "text": "states that AUTO's default sequence ('ssh', 'ws') does not include the new backend",
+          "passed": true,
+          "evidence": "states _AUTO_SEQUENCE=('ssh','ws') excludes new backends by default"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "ws-parser",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "ws_parse.py exists and runs (demo output shown)",
+          "passed": true,
+          "evidence": "ws_parse.py runs; demo prints ('hello world', 0)"
+        },
+        {
+          "text": "the given sample returns ('hello world', 0)",
+          "passed": true,
+          "evidence": "sample returns ('hello world', 0)"
+        },
+        {
+          "text": "logic locates the double marker and parses __JMSRC",
+          "passed": true,
+          "evidence": "first-marker-line to second-marker extraction + __JMSRC parse"
+        },
+        {
+          "text": "implemented as a pure function, no network dependency",
+          "passed": true,
+          "evidence": "pure function, no network"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "backend-extension",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "rdp_backend.md mentions inheriting AbstractTerminal",
+          "passed": true,
+          "evidence": "mentions AbstractTerminal"
+        },
+        {
+          "text": "lists the execute / interactive / close / backend_name interfaces",
+          "passed": true,
+          "evidence": "lists the 4 interfaces"
+        },
+        {
+          "text": "contains a register_backend('rdp', ...) self-registration skeleton",
+          "passed": true,
+          "evidence": "register_backend('rdp', ...) snippet"
+        },
+        {
+          "text": "states that AUTO's default sequence ('ssh', 'ws') does not include the new backend",
+          "passed": false,
+          "evidence": "no AUTO/_AUTO_SEQUENCE discussion"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "ws-parser",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "ws_parse.py exists and runs (demo output shown)",
+          "passed": true,
+          "evidence": "ws_parse.py runs; demo prints ('hello world', 0)"
+        },
+        {
+          "text": "the given sample returns ('hello world', 0)",
+          "passed": true,
+          "evidence": "sample returns ('hello world', 0) by split coincidence"
+        },
+        {
+          "text": "logic locates the double marker and parses __JMSRC",
+          "passed": false,
+          "evidence": "naive split(marker); no first-marker-line offset handling; breaks on real echo-line streams"
+        },
+        {
+          "text": "implemented as a pure function, no network dependency",
+          "passed": true,
+          "evidence": "pure function, no network"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.75,
+        "stddev": 0.0,
+        "min": 0.75,
+        "max": 0.75
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.25",
+      "time_seconds": "+0.0",
+      "tokens": "+0"
+    }
+  },
+  "notes": [
+    "ws-parser baseline passes the sample by coincidence (naive split); it breaks on real echo-line streams (assertion 3 graded fail); the skill implements the first-marker-line offset from ws-protocol.md.",
+    "backend-extension baseline omits the _AUTO_SEQUENCE behavior; the skill states AUTO excludes new backends by default."
+  ]
+}

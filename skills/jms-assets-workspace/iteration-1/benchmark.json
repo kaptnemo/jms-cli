@@ -1,0 +1,234 @@
+{
+  "metadata": {
+    "skill_name": "jms-assets",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-08-04T14:01:51Z",
+    "evals_run": [
+      1,
+      2
+    ],
+    "runs_per_configuration": 2
+  },
+  "runs": [
+    {
+      "eval_id": 2,
+      "eval_name": "ls-sdk",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "ls_sdk.md maps jms ls to list_assets(session) with default limit=50",
+          "passed": true,
+          "evidence": "ls_sdk.md maps jms ls to list_assets(session) with default limit=50"
+        },
+        {
+          "text": "explains -q maps to search_assets(session, keyword)",
+          "passed": true,
+          "evidence": "-q -> search_assets(session, keyword)"
+        },
+        {
+          "text": "explains -n maps to list_assets' limit param",
+          "passed": true,
+          "evidence": "-n -> list_assets limit param"
+        },
+        {
+          "text": "explains resolve_asset prefers exact-name match over the first search hit",
+          "passed": true,
+          "evidence": "exact-name match priority over the first search hit"
+        },
+        {
+          "text": "explains select_account defaults to @USER first and select_protocol defaults to ssh first",
+          "passed": true,
+          "evidence": "select_account @USER priority; select_protocol ssh priority"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "select-account",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "select_account.py exists and runs (demo output shown)",
+          "passed": true,
+          "evidence": "select_account.py runs; demo prints @USER / alice / @INPUT"
+        },
+        {
+          "text": "@USER beats a non-@ alias",
+          "passed": true,
+          "evidence": "@USER beats a non-@ alias"
+        },
+        {
+          "text": "empty alias falls back to username; empty list falls back to @INPUT",
+          "passed": true,
+          "evidence": "username fallback when alias empty; @INPUT when empty list"
+        },
+        {
+          "text": "the three samples return '@USER' / 'alice' / '@INPUT'",
+          "passed": true,
+          "evidence": "3 samples return '@USER' / 'alice' / '@INPUT'"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "ls-sdk",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "ls_sdk.md maps jms ls to list_assets(session) with default limit=50",
+          "passed": false,
+          "evidence": "no explicit default limit=50"
+        },
+        {
+          "text": "explains -q maps to search_assets(session, keyword)",
+          "passed": true,
+          "evidence": "-q -> search_assets"
+        },
+        {
+          "text": "explains -n maps to list_assets' limit param",
+          "passed": true,
+          "evidence": "-n -> limit param"
+        },
+        {
+          "text": "explains resolve_asset prefers exact-name match over the first search hit",
+          "passed": false,
+          "evidence": "wrongly says resolve_asset takes the first search result"
+        },
+        {
+          "text": "explains select_account defaults to @USER first and select_protocol defaults to ssh first",
+          "passed": true,
+          "evidence": "@USER priority and ssh priority stated"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "select-account",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.0,
+        "passed": 0,
+        "failed": 4,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "select_account.py exists and runs (demo output shown)",
+          "passed": false,
+          "evidence": "runs but demo prints nothing (no __main__ block)"
+        },
+        {
+          "text": "@USER beats a non-@ alias",
+          "passed": false,
+          "evidence": "no demo output to verify @USER priority"
+        },
+        {
+          "text": "empty alias falls back to username; empty list falls back to @INPUT",
+          "passed": false,
+          "evidence": "missing username fallback branch"
+        },
+        {
+          "text": "the three samples return '@USER' / 'alice' / '@INPUT'",
+          "passed": false,
+          "evidence": "no sample outputs produced"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.3,
+        "stddev": 0.4243,
+        "min": 0.0,
+        "max": 0.6
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.70",
+      "time_seconds": "+0.0",
+      "tokens": "+0"
+    }
+  },
+  "notes": [
+    "select-account baseline has no __main__ demo output and lacks the username fallback (0/4); the skill passes.",
+    "ls-sdk baseline omits list_assets' default limit=50 and the resolve_asset exact-name priority.",
+    "Note: jms-assets was initially drafted by a misdirected subagent, then reviewed and corrected by the main agent (angle-bracket description violation fixed, claims verified against source)."
+  ]
+}

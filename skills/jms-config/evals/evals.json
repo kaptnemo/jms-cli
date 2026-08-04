@@ -1,0 +1,31 @@
+{
+  "skill_name": "jms-config",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In /private/tmp/jms-eval-config/ create config.yaml for server alias prod: host=jump.example.com, username=alice, password='S3cret!pass', otp_secret='JBSWY3DPEHPK3PXP'. Use the jms library API (add_server / load_config) to create it — do not hand-write ciphertext. After creating it, validate with skills/jms-config/scripts/validate_config.py and confirm exit code 0, then copy config.yaml into the output directory.",
+      "expected_output": "A config.yaml in the output directory that is schema-valid, has an encrypted (enc:v1:) password, file mode 0600, and loads via load_config",
+      "files": [],
+      "expectations": [
+        "config.yaml exists in the output directory",
+        "config.yaml passes skills/jms-config/scripts/validate_config.py (exit code 0)",
+        "prod server's password starts with enc:v1: (encrypted, not plaintext)",
+        "config.yaml file mode is 0600",
+        "config.yaml loads successfully via jms.config.load_config"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "A user reports: Server 'qa' missing 'password'. Repair the provided config.yaml so that skills/jms-config/scripts/validate_config.py exits 0, and explain why a plaintext password also passes on read (do not modify src/jms code). Save the repaired file to the output directory.",
+      "expected_output": "A repaired config.yaml (qa server has a non-empty password) that passes validate_config.py, plus an explanation: is_encrypted() detection means plaintext is accepted on read",
+      "files": ["evals/files/broken-config.yaml"],
+      "expectations": [
+        "repaired config.yaml exists in the output directory",
+        "qa server has a non-empty password field",
+        "validate_config.py exits 0 on the repaired file",
+        "the explanation mentions is_encrypted() detection or that plaintext is accepted on read",
+        "no source under src/jms was modified"
+      ]
+    }
+  ]
+}

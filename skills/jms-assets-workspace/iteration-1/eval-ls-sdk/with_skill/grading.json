@@ -1,0 +1,47 @@
+{
+  "expectations": [
+    {
+      "text": "ls_sdk.md maps jms ls to list_assets(session) with default limit=50",
+      "passed": true,
+      "evidence": "ls_sdk.md maps jms ls to list_assets(session) with default limit=50"
+    },
+    {
+      "text": "explains -q maps to search_assets(session, keyword)",
+      "passed": true,
+      "evidence": "-q -> search_assets(session, keyword)"
+    },
+    {
+      "text": "explains -n maps to list_assets' limit param",
+      "passed": true,
+      "evidence": "-n -> list_assets limit param"
+    },
+    {
+      "text": "explains resolve_asset prefers exact-name match over the first search hit",
+      "passed": true,
+      "evidence": "exact-name match priority over the first search hit"
+    },
+    {
+      "text": "explains select_account defaults to @USER first and select_protocol defaults to ssh first",
+      "passed": true,
+      "evidence": "select_account @USER priority; select_protocol ssh priority"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

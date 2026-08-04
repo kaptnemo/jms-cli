@@ -1,0 +1,30 @@
+{
+  "skill_name": "jms-assets",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write a pure function select_account(permed_accounts: list[dict]) -> str (save as select_account.py in the output directory) following jms-cli's account-alias selection: @USER first, otherwise the first alias not starting with @ (fall back to username when alias is empty), otherwise the first account's alias, and @INPUT when the list is empty. Verify with these samples and run the demo: 1) [{'alias': '@USER', 'username': 'dynamic'}, {'alias': 'alice', 'username': 'alice'}] must return '@USER'; 2) [{'alias': 'alice', 'username': 'alice'}] must return 'alice'; 3) [] must return '@INPUT'.",
+      "expected_output": "A runnable select_account.py: the three samples return '@USER' / 'alice' / '@INPUT', with the priority logic, no network dependency",
+      "files": [],
+      "expectations": [
+        "select_account.py exists and runs (demo output shown)",
+        "@USER beats a non-@ alias",
+        "empty alias falls back to username; empty list falls back to @INPUT",
+        "the three samples return '@USER' / 'alice' / '@INPUT'"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Explain `jms ls`'s library equivalent using the jms package; write ls_sdk.md to the output directory: 1) what `jms ls` / `jms ls -q mysql` / `jms ls -n 10` map to, with key arguments (including list_assets' default limit); 2) resolve_asset's exact-name-priority rule; 3) select_account and select_protocol default behavior (including @USER and ssh priority).",
+      "expected_output": "ls_sdk.md: jms ls -> list_assets(session) (default limit=50); -q -> search_assets(session, keyword); -n -> list_assets' limit param; exact-name match beats the first search hit; select_account @USER first, select_protocol ssh first",
+      "files": [],
+      "expectations": [
+        "ls_sdk.md maps jms ls to list_assets(session) with default limit=50",
+        "explains -q maps to search_assets(session, keyword)",
+        "explains -n maps to list_assets' limit param",
+        "explains resolve_asset prefers exact-name match over the first search hit",
+        "explains select_account defaults to @USER first and select_protocol defaults to ssh first"
+      ]
+    }
+  ]
+}

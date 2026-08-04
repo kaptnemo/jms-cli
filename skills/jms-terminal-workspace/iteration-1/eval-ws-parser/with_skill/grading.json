@@ -1,0 +1,42 @@
+{
+  "expectations": [
+    {
+      "text": "ws_parse.py exists and runs (demo output shown)",
+      "passed": true,
+      "evidence": "ws_parse.py runs; demo prints ('hello world', 0)"
+    },
+    {
+      "text": "the given sample returns ('hello world', 0)",
+      "passed": true,
+      "evidence": "sample returns ('hello world', 0)"
+    },
+    {
+      "text": "logic locates the double marker and parses __JMSRC",
+      "passed": true,
+      "evidence": "first-marker-line to second-marker extraction + __JMSRC parse"
+    },
+    {
+      "text": "implemented as a pure function, no network dependency",
+      "passed": true,
+      "evidence": "pure function, no network"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

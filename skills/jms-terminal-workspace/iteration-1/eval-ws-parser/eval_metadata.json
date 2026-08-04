@@ -1,0 +1,11 @@
+{
+  "eval_id": 1,
+  "eval_name": "ws-parser",
+  "prompt": "Implement a pure function parse_ws_result(raw: str, marker: str) -> tuple[str, int | None] following the jms-cli WebSocket execute protocol: the marker appears twice in the stream, the command output is the text after the first marker's line and before the second marker; after the second marker, __JMSRC:N__ yields N, otherwise None; when the marker appears only once, return (content after the first marker, None). Verify with this sample: raw = 'prompt> echo __JMSDONE_x__\\nhello world\\n__JMSDONE_x__\\n__JMSRC:0__\\n', marker = '__JMSDONE_x__' must return ('hello world', 0). Save ws_parse.py to the output directory and run the demo.",
+  "assertions": [
+    "ws_parse.py exists and runs (demo output shown)",
+    "the given sample returns ('hello world', 0)",
+    "logic locates the double marker and parses __JMSRC",
+    "implemented as a pure function, no network dependency"
+  ]
+}

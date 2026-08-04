@@ -1,0 +1,42 @@
+{
+  "expectations": [
+    {
+      "text": "mfa_detect.py implements is_mfa_required(login_response: dict) -> bool",
+      "passed": true,
+      "evidence": "function defined"
+    },
+    {
+      "text": "it checks both code == 'mfa_required' and error == 'mfa_required'",
+      "passed": false,
+      "evidence": "only checks the code field; misses the error-field variant"
+    },
+    {
+      "text": "comments explain the dual-field reason (different JumpServer versions)",
+      "passed": false,
+      "evidence": "no dual-field rationale comment"
+    },
+    {
+      "text": "comments mention auto-code via pyotp.TOTP(secret).now() when otp_secret is set",
+      "passed": false,
+      "evidence": "no pyotp auto-code mention"
+    }
+  ],
+  "summary": {
+    "passed": 1,
+    "failed": 3,
+    "total": 4,
+    "pass_rate": 0.25
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

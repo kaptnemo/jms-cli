@@ -1,0 +1,47 @@
+{
+  "expectations": [
+    {
+      "text": "config.yaml exists in the output directory",
+      "passed": true,
+      "evidence": "config.yaml present in outputs/"
+    },
+    {
+      "text": "config.yaml passes skills/jms-config/scripts/validate_config.py (exit code 0)",
+      "passed": true,
+      "evidence": "validator exit 0: 'OK: ... matches the jms config v1.0 schema'"
+    },
+    {
+      "text": "prod server's password starts with enc:v1: (encrypted, not plaintext)",
+      "passed": true,
+      "evidence": "password field has enc:v1: prefix (checked in raw config)"
+    },
+    {
+      "text": "config.yaml file mode is 0600",
+      "passed": true,
+      "evidence": "mode 0o600 from stat"
+    },
+    {
+      "text": "config.yaml loads successfully via jms.config.load_config",
+      "passed": true,
+      "evidence": "load_config() round-trip succeeded (base_url https://jump.example.com)"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

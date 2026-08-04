@@ -1,0 +1,12 @@
+{
+  "eval_id": 1,
+  "eval_name": "create-config",
+  "prompt": "In /private/tmp/jms-eval-config/ create config.yaml for server alias prod: host=jump.example.com, username=alice, password='S3cret!pass', otp_secret='JBSWY3DPEHPK3PXP'. Use the jms library API (add_server / load_config) to create it — do not hand-write ciphertext. After creating it, validate with skills/jms-config/scripts/validate_config.py and confirm exit code 0, then copy config.yaml into the output directory.",
+  "assertions": [
+    "config.yaml exists in the output directory",
+    "config.yaml passes skills/jms-config/scripts/validate_config.py (exit code 0)",
+    "prod server's password starts with enc:v1: (encrypted, not plaintext)",
+    "config.yaml file mode is 0600",
+    "config.yaml loads successfully via jms.config.load_config"
+  ]
+}

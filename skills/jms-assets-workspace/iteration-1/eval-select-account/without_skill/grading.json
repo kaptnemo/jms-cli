@@ -1,0 +1,42 @@
+{
+  "expectations": [
+    {
+      "text": "select_account.py exists and runs (demo output shown)",
+      "passed": false,
+      "evidence": "runs but demo prints nothing (no __main__ block)"
+    },
+    {
+      "text": "@USER beats a non-@ alias",
+      "passed": false,
+      "evidence": "no demo output to verify @USER priority"
+    },
+    {
+      "text": "empty alias falls back to username; empty list falls back to @INPUT",
+      "passed": false,
+      "evidence": "missing username fallback branch"
+    },
+    {
+      "text": "the three samples return '@USER' / 'alice' / '@INPUT'",
+      "passed": false,
+      "evidence": "no sample outputs produced"
+    }
+  ],
+  "summary": {
+    "passed": 0,
+    "failed": 4,
+    "total": 4,
+    "pass_rate": 0.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

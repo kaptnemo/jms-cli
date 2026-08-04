@@ -1,0 +1,30 @@
+{
+  "skill_name": "jms-transfer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Explain `jms sftp`'s automatic direction detection and give the direction plus the equivalent library API call (function name and key arguments) for each of: 1) jms sftp ./data.tar.gz web@prod:/tmp/  2) jms sftp web@prod:/tmp/data.tar.gz ./  3) jms sftp a@s1:/f b@s2:/g. Verify example 3 with skills/jms-transfer/scripts/check_sftp_spec.py and record the actual output. Save the explanation and output as direction.md in the output directory.",
+      "expected_output": "direction.md: the rule (colon = remote), call 1 = upload via sftp_transfer, call 2 = download via sftp_transfer (is_upload=False), call 3 = relay via relay_transfer (RelaySpec), plus the actual check_sftp_spec.py output for 'a@s1:/f b@s2:/g' (relay: ...)",
+      "files": [],
+      "expectations": [
+        "direction.md explains the direction rule (colon marks a remote side)",
+        "call 1 is upload, equivalent library call sftp_transfer",
+        "call 2 is download, equivalent library call sftp_transfer (is_upload=False)",
+        "call 3 is relay, equivalent library call relay_transfer + RelaySpec",
+        "records the actual check_sftp_spec.py output for 'a@s1:/f b@s2:/g' (relay: ...)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "A deployment chroots SFTP to /tmp (CLI uses --chroot /tmp). Explain the return value of translate_remote_path('/tmp', '/data/x.bin'), write the exact md5sum command RemoteHasher runs over SSH exec for the SFTP path /data/x.bin (including quoting), and explain which command locates bad chunks when the full-file md5 mismatches, and why the source is not re-read. Save the explanation as chroot-verify.md in the output directory.",
+      "expected_output": "chroot-verify.md: translation result '/tmp/data/x.bin'; an md5sum command with shlex quoting (md5sum /tmp/data/x.bin); per-chunk dd bs=1M iflag=skip_bytes,count_bytes skip=... count=... | md5sum compared with TaskResult.md5; reason: workers already recorded streamed md5s, no source re-read",
+      "files": [],
+      "expectations": [
+        "chroot-verify.md gives translate_remote_path('/tmp', '/data/x.bin') = '/tmp/data/x.bin'",
+        "the md5sum command uses /tmp/data/x.bin with quote handling (shlex style)",
+        "per-chunk location uses dd bs=1M iflag=skip_bytes,count_bytes skip=... count=... | md5sum",
+        "explains comparison with the worker-recorded TaskResult.md5 and no source re-read"
+      ]
+    }
+  ]
+}

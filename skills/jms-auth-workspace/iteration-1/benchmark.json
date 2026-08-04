@@ -1,0 +1,234 @@
+{
+  "metadata": {
+    "skill_name": "jms-auth",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-08-04T14:00:11Z",
+    "evals_run": [
+      1,
+      2
+    ],
+    "runs_per_configuration": 2
+  },
+  "runs": [
+    {
+      "eval_id": 2,
+      "eval_name": "mfa-detect",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "mfa_detect.py implements is_mfa_required(login_response: dict) -> bool",
+          "passed": true,
+          "evidence": "is_mfa_required(login_response) -> bool defined"
+        },
+        {
+          "text": "it checks both code == 'mfa_required' and error == 'mfa_required'",
+          "passed": true,
+          "evidence": "checks both code and error fields"
+        },
+        {
+          "text": "comments explain the dual-field reason (different JumpServer versions)",
+          "passed": true,
+          "evidence": "docstring explains version field differences"
+        },
+        {
+          "text": "comments mention auto-code via pyotp.TOTP(secret).now() when otp_secret is set",
+          "passed": true,
+          "evidence": "docstring mentions pyotp.TOTP(otp_secret).now() auto-code"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "sftp-token",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "create_sftp_token.py uses create_connection_token",
+          "passed": true,
+          "evidence": "uses create_connection_token"
+        },
+        {
+          "text": "the call passes protocol='ssh' (not 'sftp')",
+          "passed": true,
+          "evidence": "protocol='ssh' (matches the live-server contract)"
+        },
+        {
+          "text": "the call passes connect_method='web_sftp'",
+          "passed": true,
+          "evidence": "connect_method='web_sftp'"
+        },
+        {
+          "text": "comments explain why web_cli cannot be used for SFTP and that protocol='sftp' is rejected (perm_account_invalid)",
+          "passed": true,
+          "evidence": "comments explain web_cli not for SFTP + perm_account_invalid"
+        },
+        {
+          "text": "comments explain JMS-{id} and token_value for SSH auth on KoKo port 2222",
+          "passed": true,
+          "evidence": "comments explain JMS-{id}/token_value on KoKo 2222"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "mfa-detect",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.25,
+        "passed": 1,
+        "failed": 3,
+        "total": 4,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "mfa_detect.py implements is_mfa_required(login_response: dict) -> bool",
+          "passed": true,
+          "evidence": "function defined"
+        },
+        {
+          "text": "it checks both code == 'mfa_required' and error == 'mfa_required'",
+          "passed": false,
+          "evidence": "only checks the code field; misses the error-field variant"
+        },
+        {
+          "text": "comments explain the dual-field reason (different JumpServer versions)",
+          "passed": false,
+          "evidence": "no dual-field rationale comment"
+        },
+        {
+          "text": "comments mention auto-code via pyotp.TOTP(secret).now() when otp_secret is set",
+          "passed": false,
+          "evidence": "no pyotp auto-code mention"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "sftp-token",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.4,
+        "passed": 2,
+        "failed": 3,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "create_sftp_token.py uses create_connection_token",
+          "passed": true,
+          "evidence": "uses create_connection_token"
+        },
+        {
+          "text": "the call passes protocol='ssh' (not 'sftp')",
+          "passed": false,
+          "evidence": "protocol='sftp' used — rejected by the real server (perm_account_invalid)"
+        },
+        {
+          "text": "the call passes connect_method='web_sftp'",
+          "passed": true,
+          "evidence": "connect_method='web_sftp'"
+        },
+        {
+          "text": "comments explain why web_cli cannot be used for SFTP and that protocol='sftp' is rejected (perm_account_invalid)",
+          "passed": false,
+          "evidence": "no explanation of web_cli/SFTP issue or perm_account_invalid"
+        },
+        {
+          "text": "comments explain JMS-{id} and token_value for SSH auth on KoKo port 2222",
+          "passed": false,
+          "evidence": "no 2222 JMS-{id} usage explanation"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.325,
+        "stddev": 0.1061,
+        "min": 0.25,
+        "max": 0.4
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.68",
+      "time_seconds": "+0.0",
+      "tokens": "+0"
+    }
+  },
+  "notes": [
+    "sftp-token is the most discriminating eval: the baseline followed the outdated token.py docstring (protocol='sftp'), which the real server rejects with perm_account_invalid; the skill passes by encoding the live-server contract.",
+    "mfa-detect baseline only checks the code field, missing the error variant; the skill checks both.",
+    "This skill's protocol claims were also validated 11/11 by live-server integration tests against a local test JumpServer (credentials referenced only via JMS_TEST_* env vars)."
+  ]
+}

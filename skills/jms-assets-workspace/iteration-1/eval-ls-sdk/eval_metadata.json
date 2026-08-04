@@ -1,0 +1,12 @@
+{
+  "eval_id": 2,
+  "eval_name": "ls-sdk",
+  "prompt": "Explain `jms ls`'s library equivalent using the jms package; write ls_sdk.md to the output directory: 1) what `jms ls` / `jms ls -q mysql` / `jms ls -n 10` map to, with key arguments (including list_assets' default limit); 2) resolve_asset's exact-name-priority rule; 3) select_account and select_protocol default behavior (including @USER and ssh priority).",
+  "assertions": [
+    "ls_sdk.md maps jms ls to list_assets(session) with default limit=50",
+    "explains -q maps to search_assets(session, keyword)",
+    "explains -n maps to list_assets' limit param",
+    "explains resolve_asset prefers exact-name match over the first search hit",
+    "explains select_account defaults to @USER first and select_protocol defaults to ssh first"
+  ]
+}

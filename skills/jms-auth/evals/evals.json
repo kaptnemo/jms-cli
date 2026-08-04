@@ -1,0 +1,30 @@
+{
+  "skill_name": "jms-auth",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write a Python snippet (save as create_sftp_token.py in the output directory) that creates an SFTP connection token for a resolved asset using the jms library: state which protocol and connect_method values are required (the live-server contract is protocol='ssh' + connect_method='web_sftp'; protocol='sftp' is rejected), explain in comments why an ssh/web_cli token cannot be used directly for SFTP (what KoKo does), and how token id/value are used for SSH auth on port 2222.",
+      "expected_output": "create_sftp_token.py: create_connection_token(sess, asset, protocol='ssh', connect_method='web_sftp'); comments cover perm_account_invalid / the web_sftp contract; JMS-{id} / token_value on KoKo 2222",
+      "files": [],
+      "expectations": [
+        "create_sftp_token.py uses create_connection_token",
+        "the call passes protocol='ssh' (not 'sftp')",
+        "the call passes connect_method='web_sftp'",
+        "comments explain why web_cli cannot be used for SFTP and that protocol='sftp' is rejected (perm_account_invalid)",
+        "comments explain JMS-{id} and token_value for SSH auth on KoKo port 2222"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write a pure function is_mfa_required(login_response: dict) -> bool (save as mfa_detect.py in the output directory) that detects whether a JumpServer login response demands MFA, and explain in comments why jms checks both the code and error fields, and how the code is auto-computed when otp_secret is set (no network needed).",
+      "expected_output": "mfa_detect.py: returns login_response.get('code') == 'mfa_required' or login_response.get('error') == 'mfa_required'; comments cover version field differences and pyotp.TOTP(secret).now() auto-code",
+      "files": [],
+      "expectations": [
+        "mfa_detect.py implements is_mfa_required(login_response: dict) -> bool",
+        "it checks both code == 'mfa_required' and error == 'mfa_required'",
+        "comments explain the dual-field reason (different JumpServer versions)",
+        "comments mention auto-code via pyotp.TOTP(secret).now() when otp_secret is set"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "eval_id": 2,
+  "eval_name": "backend-extension",
+  "prompt": "Design the minimal implementation checklist for adding a new terminal backend (e.g. rdp) to jms-cli; output a markdown skeleton saved as rdp_backend.md in the output directory: which abstract class to inherit, which 4 interfaces must be implemented, how to self-register (register_backend call), and whether BackendType.AUTO includes the new backend by default (state the _AUTO_SEQUENCE default).",
+  "assertions": [
+    "rdp_backend.md mentions inheriting AbstractTerminal",
+    "lists the execute / interactive / close / backend_name interfaces",
+    "contains a register_backend('rdp', ...) self-registration skeleton",
+    "states that AUTO's default sequence ('ssh', 'ws') does not include the new backend"
+  ]
+}

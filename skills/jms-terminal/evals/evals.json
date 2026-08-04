@@ -1,0 +1,29 @@
+{
+  "skill_name": "jms-terminal",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Implement a pure function parse_ws_result(raw: str, marker: str) -> tuple[str, int | None] following the jms-cli WebSocket execute protocol: the marker appears twice in the stream, the command output is the text after the first marker's line and before the second marker; after the second marker, __JMSRC:N__ yields N, otherwise None; when the marker appears only once, return (content after the first marker, None). Verify with this sample: raw = 'prompt> echo __JMSDONE_x__\\nhello world\\n__JMSDONE_x__\\n__JMSRC:0__\\n', marker = '__JMSDONE_x__' must return ('hello world', 0). Save ws_parse.py to the output directory and run the demo.",
+      "expected_output": "A runnable ws_parse.py: the sample returns ('hello world', 0), with double-marker location and __JMSRC parsing, no network dependency",
+      "files": [],
+      "expectations": [
+        "ws_parse.py exists and runs (demo output shown)",
+        "the given sample returns ('hello world', 0)",
+        "logic locates the double marker and parses __JMSRC",
+        "implemented as a pure function, no network dependency"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Design the minimal implementation checklist for adding a new terminal backend (e.g. rdp) to jms-cli; output a markdown skeleton saved as rdp_backend.md in the output directory: which abstract class to inherit, which 4 interfaces must be implemented, how to self-register (register_backend call), and whether BackendType.AUTO includes the new backend by default (state the _AUTO_SEQUENCE default).",
+      "expected_output": "rdp_backend.md: AbstractTerminal inheritance, the execute/interactive/close/backend_name interfaces, a register_backend('rdp', ...) skeleton, and a statement that AUTO does not include the backend by default (default ('ssh', 'ws'))",
+      "files": [],
+      "expectations": [
+        "rdp_backend.md mentions inheriting AbstractTerminal",
+        "lists the execute / interactive / close / backend_name interfaces",
+        "contains a register_backend('rdp', ...) self-registration skeleton",
+        "states that AUTO's default sequence ('ssh', 'ws') does not include the new backend"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "expectations": [
+    {
+      "text": "direction.md explains the direction rule (colon marks a remote side)",
+      "passed": true,
+      "evidence": "colon=remote rule stated"
+    },
+    {
+      "text": "call 1 is upload, equivalent library call sftp_transfer",
+      "passed": true,
+      "evidence": "call 1 upload -> sftp_transfer"
+    },
+    {
+      "text": "call 2 is download, equivalent library call sftp_transfer (is_upload=False)",
+      "passed": true,
+      "evidence": "call 2 download -> sftp_transfer"
+    },
+    {
+      "text": "call 3 is relay, equivalent library call relay_transfer + RelaySpec",
+      "passed": false,
+      "evidence": "call 3 mentions relay_transfer but no RelaySpec"
+    },
+    {
+      "text": "records the actual check_sftp_spec.py output for 'a@s1:/f b@s2:/g' (relay: ...)",
+      "passed": false,
+      "evidence": "check_sftp_spec.py not run; no recorded output"
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 2,
+    "total": 5,
+    "pass_rate": 0.6
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "errors_encountered": 0
+  },
+  "timing": {
+    "executor_duration_seconds": 0.0,
+    "total_duration_seconds": 0.0
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions."
+  }
+}

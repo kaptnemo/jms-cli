@@ -1,0 +1,11 @@
+{
+  "eval_id": 2,
+  "eval_name": "chroot-verify",
+  "prompt": "A deployment chroots SFTP to /tmp (CLI uses --chroot /tmp). Explain the return value of translate_remote_path('/tmp', '/data/x.bin'), write the exact md5sum command RemoteHasher runs over SSH exec for the SFTP path /data/x.bin (including quoting), and explain which command locates bad chunks when the full-file md5 mismatches, and why the source is not re-read. Save the explanation as chroot-verify.md in the output directory.",
+  "assertions": [
+    "chroot-verify.md gives translate_remote_path('/tmp', '/data/x.bin') = '/tmp/data/x.bin'",
+    "the md5sum command uses /tmp/data/x.bin with quote handling (shlex style)",
+    "per-chunk location uses dd bs=1M iflag=skip_bytes,count_bytes skip=... count=... | md5sum",
+    "explains comparison with the worker-recorded TaskResult.md5 and no source re-read"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "eval_id": 1,
+  "eval_name": "sftp-token",
+  "prompt": "Write a Python snippet (save as create_sftp_token.py in the output directory) that creates an SFTP connection token for a resolved asset using the jms library: state which protocol and connect_method values are required (the live-server contract is protocol='ssh' + connect_method='web_sftp'; protocol='sftp' is rejected), explain in comments why an ssh/web_cli token cannot be used directly for SFTP (what KoKo does), and how token id/value are used for SSH auth on port 2222.",
+  "assertions": [
+    "create_sftp_token.py uses create_connection_token",
+    "the call passes protocol='ssh' (not 'sftp')",
+    "the call passes connect_method='web_sftp'",
+    "comments explain why web_cli cannot be used for SFTP and that protocol='sftp' is rejected (perm_account_invalid)",
+    "comments explain JMS-{id} and token_value for SSH auth on KoKo port 2222"
+  ]
+}

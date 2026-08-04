@@ -1,0 +1,10 @@
+version: 1.0
+default: prod
+servers:
+  prod:
+    host: jump.example.com
+    username: alice
+    password: enc:v1:AAAA
+  qa:
+    host: qa.example.com
+    username: bob

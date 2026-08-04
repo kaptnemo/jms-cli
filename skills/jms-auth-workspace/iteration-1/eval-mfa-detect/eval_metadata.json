@@ -1,0 +1,11 @@
+{
+  "eval_id": 2,
+  "eval_name": "mfa-detect",
+  "prompt": "Write a pure function is_mfa_required(login_response: dict) -> bool (save as mfa_detect.py in the output directory) that detects whether a JumpServer login response demands MFA, and explain in comments why jms checks both the code and error fields, and how the code is auto-computed when otp_secret is set (no network needed).",
+  "assertions": [
+    "mfa_detect.py implements is_mfa_required(login_response: dict) -> bool",
+    "it checks both code == 'mfa_required' and error == 'mfa_required'",
+    "comments explain the dual-field reason (different JumpServer versions)",
+    "comments mention auto-code via pyotp.TOTP(secret).now() when otp_secret is set"
+  ]
+}

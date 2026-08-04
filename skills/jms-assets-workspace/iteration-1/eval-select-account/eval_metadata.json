@@ -1,0 +1,11 @@
+{
+  "eval_id": 1,
+  "eval_name": "select-account",
+  "prompt": "Write a pure function select_account(permed_accounts: list[dict]) -> str (save as select_account.py in the output directory) following jms-cli's account-alias selection: @USER first, otherwise the first alias not starting with @ (fall back to username when alias is empty), otherwise the first account's alias, and @INPUT when the list is empty. Verify with these samples and run the demo: 1) [{'alias': '@USER', 'username': 'dynamic'}, {'alias': 'alice', 'username': 'alice'}] must return '@USER'; 2) [{'alias': 'alice', 'username': 'alice'}] must return 'alice'; 3) [] must return '@INPUT'.",
+  "assertions": [
+    "select_account.py exists and runs (demo output shown)",
+    "@USER beats a non-@ alias",
+    "empty alias falls back to username; empty list falls back to @INPUT",
+    "the three samples return '@USER' / 'alice' / '@INPUT'"
+  ]
+}
