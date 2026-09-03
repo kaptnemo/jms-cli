@@ -447,14 +447,15 @@ def ws_transfer(
     on_status: StatusHook | None = None,
     on_progress: WSProgressHook | None = None,
 ) -> None:
-    """Upload or download via KoKo's ``/koko/ws/sftp/`` chunked protocol.
+    """Upload or download via KoKo's ``/koko/ws/sftp/`` WebSocket.
 
-    Integrity is enforced server-side (per-chunk SHA256 on upload, full-file
-    SHA256 on commit, per-chunk SHA256 on download), so the SSH-exec md5
-    verification pass is neither applicable nor necessary. Chunks of a single
-    file are written sequentially (the protocol requires it); distinct files
-    are still transferred across ``n_workers`` worker threads, each holding its
-    own WebSocket connection.
+    Uses the elFinder-style JSON commands (``list`` / ``download`` / ``upload``
+    chunked / ``mkdir``) present across KoKo versions, so no SSH-exec md5
+    verification pass is involved (the SSH backend owns that). Chunks of a
+    single file are written sequentially (the ``upload`` command keys one
+    server-side handle per integer id); distinct files are still transferred
+    across ``n_workers`` worker threads, each holding its own WebSocket
+    connection.
 
     Args:
         server: Target server config.
@@ -646,7 +647,7 @@ def sftp_transfer(
             "split-files"). Ignored by the ``ws`` backend.
         chroot: SFTP chroot in SSH-exec terms (ssh backend only).
         verify: Enable post-transfer md5 verification (ssh backend only;
-            the ws backend enforces SHA256 server-side).
+            the ws backend has no SSH-exec verification path).
         recursive: Recurse into directories.
         skip_hidden: Skip hidden files and directories.
         backend: Transfer backend ("ssh" / "ws" / "http"); None consults

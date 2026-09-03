@@ -3,11 +3,10 @@
 ``websocket.create_connection`` and ``create_connection_token`` are mocked, and
 an in-memory ``FakeWS`` replays the KoKo SFTP message protocol (JSON text
 frames with base64 ``raw``). Tests assert observable protocol behavior (URL,
-cookie, command sequence, SHA256 fields, offsets) — not mock call counts.
+cookie, command sequence, chunk offsets) — not mock call counts.
 """
 
 import base64
-import hashlib
 import json
 import os
 import tempfile
@@ -200,22 +199,6 @@ def test_stat_root_is_dir() -> None:
     assert client.stat("/") == {"size": 0, "is_dir": True}
 
 
-def test_read_chunk_decodes_raw_and_meta() -> None:
-    payload = b"hello world"
-
-    def handler(cmd, fields, raw):
-        assert cmd == "transfer_read"
-        assert fields["offset"] == 0 and fields["length"] == 11
-        meta = {"offset": 0, "sha256": hashlib.sha256(payload).hexdigest(), "eof": True}
-        return json.dumps(meta), payload
-
-    client = _client(handler)
-    data, sha, eof = client.read_chunk("/f.bin", 0, 11)
-    assert data == payload
-    assert sha == hashlib.sha256(payload).hexdigest()
-    assert eof is True
-
-
 def test_server_err_raises() -> None:
     class _ErrWS(ScriptedWS):
         def send(self, data: str) -> None:
@@ -229,37 +212,14 @@ def test_server_err_raises() -> None:
         client.ls("/x")
 
 
-def test_upload_file_prepare_write_commit() -> None:
+def test_upload_file_chunk_then_merge() -> None:
     content = b"x" * (CHUNK_SIZE + 17)  # spans two chunks
     records = []
-    written = {"n": 0}
 
     def handler(cmd, fields, raw):
-        if cmd == "transfer_prepare":
-            records.append((cmd, fields, raw))
-            assert fields["conflict_policy"] == "overwrite"
-            assert fields["size"] == len(content)
-            return json.dumps({
-                "state": "ready", "total_bytes": len(content),
-                "committed_bytes": 0,
-            }), None
-        if cmd == "transfer_write":
-            assert fields["offset"] == written["n"]
-            assert fields["sha256"] == hashlib.sha256(raw).hexdigest()
-            assert fields["size"] == len(content)
-            written["n"] += len(raw)
-            records.append((cmd, fields, raw))
-            return json.dumps({
-                "state": "ready", "committed_bytes": written["n"],
-                "total_bytes": len(content),
-            }), None
-        if cmd == "transfer_commit":
-            records.append((cmd, fields, raw))
-            assert fields["sha256"] == hashlib.sha256(content).hexdigest()
-            return json.dumps({
-                "state": "completed", "committed_bytes": len(content),
-                "total_bytes": len(content),
-            }), None
+        records.append((cmd, fields, raw))
+        if cmd == "upload":
+            return "ok", None
         raise AssertionError(f"unexpected cmd {cmd}")
 
     fd, path = tempfile.mkstemp()
@@ -271,47 +231,87 @@ def test_upload_file_prepare_write_commit() -> None:
         client = _client(handler)
         client.upload_file("/dst/f.bin", path, len(content), on_progress=progress.append)
 
-        cmds = [r[0] for r in records]
-        assert cmds == [
-            "transfer_prepare", "transfer_write", "transfer_write", "transfer_commit",
-        ]
-        # second write offset = first chunk size
-        assert records[2][1]["offset"] == CHUNK_SIZE
+        assert [r[0] for r in records] == ["upload", "upload", "upload"]
+        first, second, third = records
+        assert first[1] == {"path": "/dst/f.bin", "chunk": True, "offset": 0}
+        assert second[1] == {"path": "/dst/f.bin", "chunk": True, "offset": CHUNK_SIZE}
+        assert third[1] == {"path": "/dst/f.bin", "merge": True}
+        assert first[2] == content[:CHUNK_SIZE]
+        assert second[2] == content[CHUNK_SIZE:]
+        assert third[2] is None
         assert sum(progress) == len(content)
+        # all chunks share one integer id (the server-side handle key)
+        ids = {json.loads(s)["id"] for s in client._ws.sent}
+        assert ids == {"1"}
     finally:
         os.unlink(path)
 
 
-def test_download_file_writes_to_local(tmp_path) -> None:
+def test_upload_empty_file_single_non_chunk() -> None:
+    records = []
+
+    def handler(cmd, fields, raw):
+        records.append((cmd, fields, raw))
+        return "ok", None
+
+    fd, path = tempfile.mkstemp()
+    try:
+        os.close(fd)
+        client = _client(handler)
+        client.upload_file("/dst/e.bin", path, 0)
+        assert records == [("upload", {"path": "/dst/e.bin", "size": 0}, None)]
+    finally:
+        os.unlink(path)
+
+
+class DownloadWS(FakeWS):
+    """Replays a ``download`` stream: N SFTP_BINARY frames + 1 SFTP_DATA."""
+
+    def __init__(self, chunks: list[bytes], filename: str = "f.bin", err: str = "") -> None:
+        super().__init__()
+        self._chunks = chunks
+        self._filename = filename
+        self._err = err
+
+    def send(self, data: str) -> None:
+        super().send(data)
+        msg = json.loads(data)
+        seq = msg["id"]
+        if self._err:
+            self.frames.append(_text({
+                "id": seq, "type": "SFTP_DATA", "err": self._err,
+            }))
+            return
+        for chunk in self._chunks:
+            self.frames.append(_text({
+                "id": seq, "type": "SFTP_BINARY",
+                "raw": base64.b64encode(chunk).decode("ascii"),
+            }))
+        self.frames.append(_text({
+            "id": seq, "type": "SFTP_DATA", "data": self._filename,
+        }))
+
+
+def test_download_file_streams_frames(tmp_path) -> None:
     content = b"hello download"
     dst = tmp_path / "out" / "f.bin"
+    ws = DownloadWS([b"hello ", b"download"])
+    client = WSFileClient(ws, "ws-uuid-1")
 
-    def handler(cmd, fields, raw):
-        assert cmd == "transfer_read"
-        start = fields["offset"]
-        length = fields["length"]
-        chunk = content[start:start + length]
-        eof = start + len(chunk) == len(content)
-        meta = {"offset": start, "sha256": hashlib.sha256(chunk).hexdigest(), "eof": eof}
-        return json.dumps(meta), chunk
-
-    client = _client(handler)
-    client.download_file("/f.bin", str(dst), len(content), chunk_size=4)
+    progress = []
+    client.download_file("/f.bin", str(dst), len(content), on_progress=progress.append)
 
     assert dst.read_bytes() == content
+    assert sum(progress) == len(content)
 
 
-def test_download_checksum_mismatch_raises(tmp_path) -> None:
-    content = b"hello download"
+def test_download_error_raises(tmp_path) -> None:
     dst = tmp_path / "f.bin"
+    ws = DownloadWS([b"partial"], err="no such file")
+    client = WSFileClient(ws, "ws-uuid-1")
 
-    def handler(cmd, fields, raw):
-        chunk = content[fields["offset"]:fields["offset"] + fields["length"]]
-        return json.dumps({"offset": fields["offset"], "sha256": "deadbeef", "eof": True}), chunk
-
-    client = _client(handler)
-    with pytest.raises(TransferError, match="checksum mismatch"):
-        client.download_file("/f.bin", str(dst), len(content))
+    with pytest.raises(TransferError, match="no such file"):
+        client.download_file("/f.bin", str(dst), 7)
 
 
 # ──── backend dispatch ───────────────────────────────────────────

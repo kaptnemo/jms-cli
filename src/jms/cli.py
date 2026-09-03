@@ -485,7 +485,7 @@ def cmd_login(
     envvar="JMS_TRANSFER_BACKEND",
     help=(
         "Transfer backend: ssh (default, native SFTP over KoKo:2222), "
-        "ws (HTTP file transfer over /koko/ws/sftp/, SHA256-verified), "
+        "ws (HTTP file transfer over /koko/ws/sftp/), "
         "or http (alias for ws). Also settable via JMS_TRANSFER_BACKEND."
     ),
 )

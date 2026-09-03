@@ -7,22 +7,22 @@ text message of the form::
     {"id": "...", "cmd": "...", "data": "<json string>", "raw": "<base64>"}
 
 Binary payloads ride in the base64 ``raw`` field (Go's ``encoding/json``
-marshals ``[]byte`` as base64). The endpoint exposes elFinder-style commands
-(``list`` / ``download`` / ``upload`` / ``rm`` / ``rename`` / ``mkdir``) plus a
-resumable, checksummed chunk protocol built for large files:
+marshals ``[]byte`` as base64). The endpoint exposes elFinder-style commands —
+``list`` / ``download`` / ``upload`` / ``rm`` / ``rename`` / ``mkdir`` — that
+are present across KoKo versions, so this backend deliberately sticks to them
+rather than the newer (and not yet universally deployed) ``transfer_*``
+checksummed chunk protocol:
 
-- ``transfer_prepare``  — create the staging file, resolve conflicts
-- ``transfer_write``    — append a chunk at ``offset``, SHA256-verified
-- ``transfer_read``     — read ``length`` bytes at ``offset``, SHA256 + EOF
-- ``transfer_commit``   — verify the full-file SHA256 and rename into place
-- ``transfer_status`` / ``transfer_cancel`` — resumable transfer control
+- ``list``     — directory listing (name / size / is_dir)
+- ``download`` — stream the file as ``SFTP_BINARY`` frames + a final
+                 ``SFTP_DATA`` frame carrying the filename
+- ``upload``   — ``chunk=true`` + ``offset`` writes one chunk keyed by an
+                 integer ``id``; ``merge=true`` closes the server-side handle
 
-Each ``transfer_write`` chunk is verified against its SHA256 on arrival and
-the final ``transfer_commit`` re-hashes the whole staged file, so integrity is
-enforced server-side (no extra SSH-exec ``md5sum`` pass is needed). The
-protocol requires chunks of a single file to be written *sequentially*
-(``offset <= committed_bytes``), so this backend uploads each file serially
-while still multiplexing distinct files across worker threads.
+Each chunk of a single file must reuse the same integer ``id`` (the server
+keys its open file handle on it), so a file is uploaded sequentially. Distinct
+files are still transferred across worker threads, each holding its own
+WebSocket connection.
 
 The client mirrors the ``SFTPClient`` surface used by ``list_remote_files`` /
 ``resolve_remote_dst`` (``ls`` / ``stat`` / ``close``), so the existing
@@ -32,11 +32,9 @@ transfer orchestration reuses those helpers unchanged.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import posixpath
 import time
-import uuid
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlparse
@@ -55,15 +53,11 @@ WS_SFTP_PATH: str = "/koko/ws/sftp/"
 # WebSocket connect timeout (seconds).
 WS_CONNECT_TIMEOUT: int = 15
 
-# Default per-operation response timeout (seconds).
+# Default per-response timeout (seconds).
 OP_TIMEOUT: int = 120
 
-# transfer_commit re-hashes the whole staged file server-side; allow a long
-# window for multi-GB files over slow links.
-COMMIT_TIMEOUT: int = 3600
-
-# Chunk size (bytes). Matches KoKo's ``transferChunkMaxSize`` (2MB) for reads;
-# used for both read and write chunks so a message never grows unwieldy.
+# Chunk size (bytes) for the ``upload`` chunked command. Kept aligned with the
+# server's own 2MB download framing so a single message never grows unwieldy.
 CHUNK_SIZE: int = 2 * 1024 * 1024
 
 
@@ -90,9 +84,9 @@ class WSFileClient:
         self._seq += 1
         return self._seq
 
-    def _send(self, cmd: str, fields: dict, raw: Optional[bytes]) -> str:
+    def _send(self, cmd: str, fields: dict, raw: Optional[bytes], id: Optional[str]) -> str:
         """Send one command; return the request id used to correlate the reply."""
-        seq = str(self._next_seq())
+        seq = id if id is not None else str(self._next_seq())
         payload: dict = {"id": seq, "cmd": cmd, "data": json.dumps(fields)}
         if raw is not None:
             payload["raw"] = base64.b64encode(raw).decode("ascii")
@@ -139,6 +133,7 @@ class WSFileClient:
         fields: Optional[dict] = None,
         raw: Optional[bytes] = None,
         timeout: float = OP_TIMEOUT,
+        id: Optional[str] = None,
     ) -> dict:
         """Send a command and return its normalized response.
 
@@ -146,11 +141,14 @@ class WSFileClient:
         and ``raw`` (base64-decoded bytes). A non-empty server ``err`` raises
         :class:`TransferError`.
         """
-        seq = self._send(cmd, fields or {}, raw)
+        seq = self._send(cmd, fields or {}, raw, id)
         msg = self._recv_for(seq, timeout)
         if msg.get("err"):
             raise TransferError(msg["err"])
+        return self._normalize(msg)
 
+    @staticmethod
+    def _normalize(msg: dict) -> dict:
         data = msg.get("data")
         if isinstance(data, str) and data:
             try:
@@ -164,7 +162,6 @@ class WSFileClient:
             "cmd": msg.get("cmd"),
             "data": data,
             "raw": base64.b64decode(raw_b64) if raw_b64 else None,
-            "current_path": msg.get("current_path"),
         }
 
     def _send_pong(self) -> None:
@@ -212,147 +209,94 @@ class WSFileClient:
         """Create a directory tree on the remote (KoKo's ``MkdirAll``)."""
         self._request("mkdir", {"path": path})
 
-    # ──── chunked transfer primitives ────────────────────────────
-
-    def _transfer_id(self) -> str:
-        return uuid.uuid4().hex
-
-    def read_chunk(self, path: str, offset: int, length: int) -> tuple[bytes, str, bool]:
-        """Read ``length`` bytes at ``offset``. Returns ``(data, sha256, eof)``."""
-        resp = self._request(
-            "transfer_read",
-            {
-                "transfer_id": self._transfer_id(),
-                "path": path,
-                "offset": offset,
-                "length": length
-            },
-        )
-        meta = resp.get("data") or {}
-        return (
-            resp.get("raw") or b"",
-            meta.get("sha256", ""),
-            bool(meta.get("eof")),
-        )
+    # ──── transfer ───────────────────────────────────────────────
 
     def upload_file(
         self,
         dst_path: str,
         src_path: str,
         size: int,
-        conflict_policy: str = "overwrite",
         chunk_size: int = CHUNK_SIZE,
         on_progress: Optional[Callable[[int], None]] = None,
     ) -> None:
-        """Upload a local file via ``transfer_prepare`` / ``write`` / ``commit``.
+        """Upload a local file via the chunked ``upload`` command.
+
+        Empty files use a single non-chunk ``upload`` (which creates the
+        zero-byte target); otherwise chunks are sent with ``chunk=true`` +
+        ``offset`` under one integer id, closed by a final ``merge=true``.
 
         Args:
             dst_path: Remote destination path.
             src_path: Local source path.
             size: File size in bytes.
-            conflict_policy: ``overwrite`` / ``skip`` / ``keep_both`` / ``ask``.
-            chunk_size: Bytes per ``transfer_write`` chunk.
+            chunk_size: Bytes per ``upload`` chunk.
             on_progress: Optional callback receiving bytes just written.
 
         Raises:
-            TransferError: The server rejected a prepare/write/commit step.
+            TransferError: The server rejected an upload/merge step.
         """
-        tid = self._transfer_id()
-        resp = self._request(
-            "transfer_prepare",
-            {
-                "transfer_id": tid,
-                "path": dst_path,
-                "size": size,
-                "conflict_policy": conflict_policy
-            },
-        )
-        state = resp.get("data", {}).get("state") if isinstance(resp.get("data"), dict) else None
-        if state == "skipped":
+        if size == 0:
+            self._request("upload", {"path": dst_path, "size": 0})
             return
-        if state == "conflict":
-            raise TransferError(
-                f"target exists and conflict policy 'ask' would block upload: {dst_path}"
-            )
 
-        full = hashlib.sha256()
+        cid = str(self._next_seq())
         offset = 0
         with open(src_path, "rb") as f:
             while True:
                 data = f.read(chunk_size)
                 if not data:
                     break
-                full.update(data)
                 self._request(
-                    "transfer_write",
-                    {
-                        "transfer_id": tid,
-                        "path": dst_path,
-                        "size": size,
-                        "offset": offset,
-                        "sha256": hashlib.sha256(data).hexdigest()
-                    },
+                    "upload",
+                    {"path": dst_path, "chunk": True, "offset": offset},
                     raw=data,
+                    id=cid,
                 )
                 offset += len(data)
                 if on_progress:
                     on_progress(len(data))
-
-        self._request(
-            "transfer_commit",
-            {
-                "transfer_id": tid,
-                "path": dst_path,
-                "size": size,
-                "sha256": full.hexdigest(),
-                "conflict_policy": conflict_policy
-            },
-            timeout=COMMIT_TIMEOUT,
-        )
+        self._request("upload", {"path": dst_path, "merge": True}, id=cid)
 
     def download_file(
         self,
         src_path: str,
         dst_path: str,
         size: int,
-        chunk_size: int = CHUNK_SIZE,
         on_progress: Optional[Callable[[int], None]] = None,
     ) -> None:
-        """Download a remote file to a local path via ``transfer_read``.
+        """Download a remote file to a local path via the ``download`` command.
 
-        Each chunk's SHA256 is checked against the bytes received; a mismatch
-        raises :class:`TransferError` (the SSH backend's md5-verify pass is not
-        applicable here because the server already hashes on the way out).
+        The server streams ``SFTP_BINARY`` frames followed by one ``SFTP_DATA``
+        frame; the payload is written to ``dst_path`` verbatim.
 
         Args:
             src_path: Remote source path.
             dst_path: Local destination path.
-            size: Remote file size in bytes.
-            chunk_size: Bytes per ``transfer_read`` request.
+            size: Remote file size in bytes (informational; the stream is
+                authoritative).
             on_progress: Optional callback receiving bytes just written.
         """
+        seq = self._send("download", {"path": src_path, "is_dir": False}, None, None)
+        chunks: list[bytes] = []
+        while True:
+            msg = self._recv_for(seq, OP_TIMEOUT)
+            if msg.get("err"):
+                raise TransferError(msg["err"])
+            if msg.get("type") == "SFTP_DATA":
+                break  # terminal frame (carries the filename)
+            raw_b64 = msg.get("raw")
+            if raw_b64:
+                data = base64.b64decode(raw_b64)
+                chunks.append(data)
+                if on_progress:
+                    on_progress(len(data))
+
         parent = Path(dst_path).parent
         if str(parent):
             parent.mkdir(parents=True, exist_ok=True)
-
-        offset = 0
         with open(dst_path, "wb") as f:
-            while offset < size:
-                data, sha256_hex, eof = self.read_chunk(src_path, offset, chunk_size)
-                if not data:
-                    if eof or offset >= size:
-                        break
-                    raise TransferError(
-                        f"empty chunk at offset {offset} while downloading {src_path}"
-                    )
-                if sha256_hex and hashlib.sha256(data).hexdigest() != sha256_hex:
-                    raise TransferError(
-                        f"checksum mismatch at offset {offset} while downloading {src_path}"
-                    )
+            for data in chunks:
                 f.write(data)
-                offset += len(data)
-                if on_progress:
-                    on_progress(len(data))
 
     def close(self) -> None:
         """Close the WebSocket connection."""
