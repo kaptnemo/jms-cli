@@ -479,7 +479,7 @@ def cmd_login(
     help="Skip hidden files and directories (names starting with '.').",
 )
 @click.option(
-    "--backend",
+    "--backend", "-b",
     type=click.Choice(["ssh", "ws", "http"], case_sensitive=False),
     default=None,
     envvar="JMS_TRANSFER_BACKEND",
