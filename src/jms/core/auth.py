@@ -8,6 +8,8 @@ module only orchestrates the dual authentication.
 
 from typing import Callable, Optional
 
+import time
+
 import pyotp
 import requests
 
@@ -112,13 +114,25 @@ class JMSSession(RESTClient):
         if not data:
             return False
 
+        # KoKo's WebSocket / SSH services validate the ``jms_sessionid`` cookie
+        # (which JumpServer's API login caps at ~10 minutes), not the Bearer
+        # token. The REST probe below only proves the token is alive, so a
+        # stale cookie would still pass it and then fail the KoKo handshake.
+        # Reject a cache whose session cookie has expired (or lost its expiry).
+        if not self._session_cookie_fresh(data["cookies"]):
+            logger.info(
+                "Cached session cookie for '%s' expired; logging in again.",
+                self.server.name,
+            )
+            return False
+
         self.bearer_token = data["bearer_token"]
         self.csrf_token = data["csrf_token"]
         self.session.cookies = deserialize_cookies(data["cookies"])
 
         try:
             # Lightweight authenticated call — proves the Bearer token is
-            # still accepted (the session cookie outlives it in practice).
+            # still accepted by the REST API.
             self.api_get("/api/v1/perms/users/self/assets/", params={"limit": 1})
         except AuthError:
             logger.info(
@@ -136,6 +150,24 @@ class JMSSession(RESTClient):
         self._logged_in = True
         logger.info("Reusing cached session for '%s'.", self.server.name)
         return True
+
+    @staticmethod
+    def _session_cookie_fresh(cookies: list[dict]) -> bool:
+        """True when the cached ``jms_sessionid`` cookie is still unexpired.
+
+        A cookie whose ``expires`` timestamp is missing is treated as stale so
+        a full login is performed rather than risking a rejected KoKo
+        handshake.
+        """
+        session_cookie = next(
+            (c for c in cookies if c.get("name") == "jms_sessionid"), None,
+        )
+        if session_cookie is None:
+            return False
+        expires = session_cookie.get("expires")
+        if not expires:
+            return False
+        return expires > time.time()
 
     def _persist_session(self) -> None:
         """Cache the current session state to disk (best-effort)."""

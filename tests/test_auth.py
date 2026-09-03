@@ -289,14 +289,16 @@ def test_login_mfa_without_secret_or_prompt_raises() -> None:
 
 
 def test_login_reuses_cached_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A valid cached session skips the full login (no POST/GET)."""
+    """A valid (unexpired cookie + live bearer) cached session skips login."""
+    import time
+
     monkeypatch.setattr(
         "jms.config.session.load_session",
         lambda server: {
             "cookies": [{
                 "name": "jms_sessionid", "value": "sid-cached",
                 "domain": "jump.example.com", "path": "/",
-                "expires": None, "secure": False,
+                "expires": time.time() + 3600, "secure": False,
             }],
             "bearer_token": "tok-cached",
             "csrf_token": "csrf-cached",
@@ -315,11 +317,56 @@ def test_login_reuses_cached_session(monkeypatch: pytest.MonkeyPatch) -> None:
     assert sess.get.called is False
 
 
-def test_login_expired_cache_relogs_in(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An expired cached session is cleared and a full login runs."""
+def test_login_stale_cookie_relogs_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An expired session cookie triggers a full login even if bearer is live."""
+    import time
+
     monkeypatch.setattr(
         "jms.config.session.load_session",
-        lambda server: {"cookies": [], "bearer_token": "tok-stale", "csrf_token": ""},
+        lambda server: {
+            "cookies": [{
+                "name": "jms_sessionid", "value": "sid-stale",
+                "domain": "jump.example.com", "path": "/",
+                "expires": time.time() - 60, "secure": False,
+            }],
+            "bearer_token": "tok-stale",
+            "csrf_token": "",
+        },
+    )
+    jms = JMSSession(_server())
+    sess = _mock_session()
+    jms.session = sess
+
+    def _post(url: str, **kw) -> MagicMock:
+        if url == AUTH_URL:
+            return _resp(201, {"token": "tok-new"})
+        sess.cookies["jms_sessionid"] = "sid-new"
+        return _resp()
+
+    sess.post.side_effect = _post
+    sess.get.side_effect = lambda url, **kw: _resp()
+
+    jms.login()
+
+    assert jms.bearer_token == "tok-new"
+    assert jms.is_authenticated
+
+
+def test_login_expired_cache_relogs_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An expired (401) bearer token clears the cache and runs a full login."""
+    import time
+
+    monkeypatch.setattr(
+        "jms.config.session.load_session",
+        lambda server: {
+            "cookies": [{
+                "name": "jms_sessionid", "value": "sid-cached",
+                "domain": "jump.example.com", "path": "/",
+                "expires": time.time() + 3600, "secure": False,
+            }],
+            "bearer_token": "tok-stale",
+            "csrf_token": "",
+        },
     )
     cleared: list = []
     monkeypatch.setattr(
@@ -334,6 +381,7 @@ def test_login_expired_cache_relogs_in(monkeypatch: pytest.MonkeyPatch) -> None:
     def _post(url: str, **kw) -> MagicMock:
         if url == AUTH_URL:
             return _resp(201, {"token": "tok-new"})
+        sess.cookies = {}  # fresh jar so the restored cookie doesn't conflict
         sess.cookies["jms_sessionid"] = "sid-new"
         return _resp()
 
