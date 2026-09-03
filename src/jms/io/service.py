@@ -23,7 +23,6 @@ from __future__ import annotations
 import os
 import posixpath
 import shlex
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -451,17 +450,21 @@ def ws_transfer(
 
     Uses the elFinder-style JSON commands (``list`` / ``download`` / ``upload``
     chunked / ``mkdir``) present across KoKo versions, so no SSH-exec md5
-    verification pass is involved (the SSH backend owns that). Chunks of a
-    single file are written sequentially (the ``upload`` command keys one
-    server-side handle per integer id); distinct files are still transferred
-    across ``n_workers`` worker threads, each holding its own WebSocket
-    connection.
+    verification pass is involved (the SSH backend owns that). All files ride
+    a single WebSocket connection (one connection token): opening one
+    connection per file is catastrophically expensive — KoKo creates a fresh
+    SFTP session to the asset per connection and JumpServer issues a
+    connection token each time — and rapidly exhausts the server. Files are
+    therefore transferred sequentially; chunks of a single file are also
+    sequential (the ``upload`` command keys one server-side handle per integer
+    id).
 
     Args:
         server: Target server config.
         spec: Parsed ``TransferSpec`` (direction + paths).
         account: Optional account override.
-        n_workers: Max parallel files.
+        n_workers: Accepted for interface parity with the ssh backend; the ws
+            backend transfers files sequentially.
         recursive: Recurse into directories.
         skip_hidden: Skip hidden files and directories.
         session_factory: Injectable session creator.
@@ -473,19 +476,17 @@ def ws_transfer(
     """
     session, asset = _resolve(server, spec.asset, account, session_factory)
 
-    def client_factory() -> WSFileClient:
-        return connect_ws_sftp(session, asset)
-
-    if spec.is_upload:
-        src_path = Path(spec.local_path)
-        if src_path.is_dir() and not recursive:
-            raise TransferError(
-                f"'{spec.local_path}' is a directory. Use -R to transfer recursively."
+    with connect_ws_sftp(session, asset) as client:
+        if spec.is_upload:
+            src_path = Path(spec.local_path)
+            if src_path.is_dir() and not recursive:
+                raise TransferError(
+                    f"'{spec.local_path}' is a directory. "
+                    f"Use -R to transfer recursively."
+                )
+            files = list_local_files(
+                spec.local_path, recursive=recursive, skip_hidden=skip_hidden,
             )
-        files = list_local_files(
-            spec.local_path, recursive=recursive, skip_hidden=skip_hidden,
-        )
-        with client_factory() as client:
             if src_path.is_dir():
                 base = str(src_path)
                 files = [
@@ -501,10 +502,9 @@ def ws_transfer(
             else:
                 dst_file = resolve_remote_dst(client, spec.remote_path, src_path.name)
                 files = [replace(f, dst_path=dst_file) for f in files]
-        _ws_upload(files, client_factory, n_workers, on_status, on_progress)
-        return
+            _ws_upload(client, files, on_status, on_progress)
+            return
 
-    with client_factory() as client:
         try:
             src_info = client.stat(spec.remote_path)
         except Exception:
@@ -534,42 +534,30 @@ def ws_transfer(
                 )
                 for f in files
             ]
-    _ws_download(files, client_factory, n_workers, on_status, on_progress)
+        _ws_download(client, files, on_status, on_progress)
 
 
 def _ws_upload(
+    client: WSFileClient,
     files: list[FileInfo],
-    client_factory: Callable[[], WSFileClient],
-    n_workers: int,
     on_status: StatusHook | None,
     on_progress: WSProgressHook | None,
 ) -> None:
-    """Upload ``files`` (local -> remote) via per-file WebSocket connections."""
+    """Upload ``files`` (local -> remote) sequentially on one connection."""
     total = sum(f.size for f in files)
     _emit(
         f"[ws] uploading {len(files)} file(s), {total} bytes ...", on_status,
     )
 
-    def report(delta: int) -> None:
-        if on_progress:
-            on_progress(delta)
+    # Create each unique parent directory once (mkdir is MkdirAll, but
+    # deduping avoids one round trip per file in a large tree).
+    parents = {posixpath.dirname(f.dst_path) for f in files}
+    for parent in sorted(parents):
+        if parent:
+            client.mkdir(parent)
 
-    def one(f: FileInfo) -> None:
-        client = client_factory()
-        try:
-            client.mkdir(posixpath.dirname(f.dst_path))
-            client.upload_file(
-                f.dst_path, f.src_path, f.size, on_progress=report,
-            )
-        finally:
-            client.close()
-
-    if n_workers > 1 and len(files) > 1:
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            list(pool.map(one, files))
-    else:
-        for f in files:
-            one(f)
+    for f in files:
+        client.upload_file(f.dst_path, f.src_path, f.size, on_progress=on_progress)
 
     _emit(
         f"[OK] Upload complete: {total} bytes ({len(files)} file(s)).",
@@ -578,37 +566,19 @@ def _ws_upload(
 
 
 def _ws_download(
+    client: WSFileClient,
     files: list[FileInfo],
-    client_factory: Callable[[], WSFileClient],
-    n_workers: int,
     on_status: StatusHook | None,
     on_progress: WSProgressHook | None,
 ) -> None:
-    """Download ``files`` (remote -> local) via per-file WebSocket connections."""
+    """Download ``files`` (remote -> local) sequentially on one connection."""
     total = sum(f.size for f in files)
     _emit(
         f"[ws] downloading {len(files)} file(s), {total} bytes ...", on_status,
     )
 
-    def report(delta: int) -> None:
-        if on_progress:
-            on_progress(delta)
-
-    def one(f: FileInfo) -> None:
-        client = client_factory()
-        try:
-            client.download_file(
-                f.src_path, f.dst_path, f.size, on_progress=report,
-            )
-        finally:
-            client.close()
-
-    if n_workers > 1 and len(files) > 1:
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            list(pool.map(one, files))
-    else:
-        for f in files:
-            one(f)
+    for f in files:
+        client.download_file(f.src_path, f.dst_path, f.size, on_progress=on_progress)
 
     _emit(
         f"[OK] Download complete: {total} bytes ({len(files)} file(s)).",
