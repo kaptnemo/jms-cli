@@ -280,7 +280,7 @@ class _FakeSession:
     def __init__(self, server: ServerConfig, otp_prompt: object = None) -> None:
         self.server = server
 
-    def login(self) -> None:
+    def login(self, force: bool = False) -> None:
         pass
 
 
@@ -354,7 +354,7 @@ def test_config_add_rejects_bad_credentials(
     monkeypatch: pytest.MonkeyPatch, runner: CliRunner, tmp_path: Path,
 ) -> None:
     class _BadSession(_FakeSession):
-        def login(self) -> None:
+        def login(self, force: bool = False) -> None:
             raise AuthError("bad credentials")
 
     monkeypatch.setattr("jms.core.auth.JMSSession", _BadSession)

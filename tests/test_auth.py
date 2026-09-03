@@ -286,3 +286,62 @@ def test_login_mfa_without_secret_or_prompt_raises() -> None:
 
     with pytest.raises(MFARequired):
         jms.login()
+
+
+def test_login_reuses_cached_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A valid cached session skips the full login (no POST/GET)."""
+    monkeypatch.setattr(
+        "jms.config.session.load_session",
+        lambda server: {
+            "cookies": [{
+                "name": "jms_sessionid", "value": "sid-cached",
+                "domain": "jump.example.com", "path": "/",
+                "expires": None, "secure": False,
+            }],
+            "bearer_token": "tok-cached",
+            "csrf_token": "csrf-cached",
+        },
+    )
+    jms = JMSSession(_server())
+    sess = _mock_session()
+    jms.session = sess
+    sess.request.return_value = _resp(200, {"count": 0, "results": []})
+
+    jms.login()
+
+    assert jms.is_authenticated
+    assert jms.bearer_token == "tok-cached"
+    assert sess.post.called is False  # full login skipped
+    assert sess.get.called is False
+
+
+def test_login_expired_cache_relogs_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An expired cached session is cleared and a full login runs."""
+    monkeypatch.setattr(
+        "jms.config.session.load_session",
+        lambda server: {"cookies": [], "bearer_token": "tok-stale", "csrf_token": ""},
+    )
+    cleared: list = []
+    monkeypatch.setattr(
+        "jms.config.session.clear_session",
+        lambda server: cleared.append(server.name),
+    )
+    jms = JMSSession(_server())
+    sess = _mock_session()
+    jms.session = sess
+    sess.request.return_value = _resp(401, {"detail": "token expired"})
+
+    def _post(url: str, **kw) -> MagicMock:
+        if url == AUTH_URL:
+            return _resp(201, {"token": "tok-new"})
+        sess.cookies["jms_sessionid"] = "sid-new"
+        return _resp()
+
+    sess.post.side_effect = _post
+    sess.get.side_effect = lambda url, **kw: _resp()
+
+    jms.login()
+
+    assert jms.bearer_token == "tok-new"
+    assert cleared == ["prod"]
+    assert jms.is_authenticated

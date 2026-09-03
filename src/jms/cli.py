@@ -119,12 +119,12 @@ def _get_server(config_path: str | None, server: str | None) -> ServerConfig:
     return cfg.default_server
 
 
-def _make_session(server: ServerConfig) -> JMSSession:
+def _make_session(server: ServerConfig, force_login: bool = False) -> JMSSession:
     """Open an authenticated session with the interactive MFA prompt wired in."""
     from jms.core.auth import JMSSession
 
     session = JMSSession(server, otp_prompt=default_otp_prompt)
-    session.login()
+    session.login(force=force_login)
     return session
 
 
@@ -252,7 +252,7 @@ def config_add(alias: str, set_default: bool, config_path: str | None) -> None:
         password=password, otp_secret=otp_secret,
     )
     logger.info("Validating credentials against %s ...", probe.base_url)
-    _make_session(probe)  # raises AuthError on failure — nothing is saved
+    _make_session(probe, force_login=True)  # raises AuthError on failure
     click.echo(f"[OK] Credentials valid for {probe.base_url}")
 
     path = add_server(

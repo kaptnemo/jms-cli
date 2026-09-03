@@ -53,8 +53,17 @@ class JMSSession(RESTClient):
         """Whether a valid session has been established."""
         return self._logged_in and bool(self.session_id)
 
-    def login(self) -> None:
-        """Perform the full login: API login for the token + form login for the cookie.
+    def login(self, force: bool = False) -> None:
+        """Log in, reusing a cached session when possible.
+
+        Unless ``force`` is set, a previously persisted session (see
+        ``jms.config.session``) is restored and validated with a cheap
+        authenticated probe; on success the full login — including any MFA
+        prompt — is skipped.
+
+        Args:
+            force: When true, always run the full login (e.g. ``config add``
+                credential validation).
 
         Raises:
             AuthError: Login failed (including transport-level APIError
@@ -62,6 +71,9 @@ class JMSSession(RESTClient):
             MFARequired: MFA is required but no otp_secret is configured
                 and no otp_prompt callback was provided.
         """
+        if not force and self._restore_cached_session():
+            return
+
         logger.info(
             "Logging in to %s as '%s' ...",
             self.base_url, self.server.username,
@@ -80,6 +92,62 @@ class JMSSession(RESTClient):
 
         self._logged_in = True
         logger.info("Login successful.")
+        self._persist_session()
+
+    def _restore_cached_session(self) -> bool:
+        """Restore a cached session and validate it with a cheap probe.
+
+        Returns:
+            True when the cached session is valid and reusable; the caller
+            should then skip the full login. False otherwise (the cache is
+            cleared if the probe reports an expired token).
+        """
+        from jms.config.session import (
+            clear_session,
+            deserialize_cookies,
+            load_session,
+        )
+
+        data = load_session(self.server)
+        if not data:
+            return False
+
+        self.bearer_token = data["bearer_token"]
+        self.csrf_token = data["csrf_token"]
+        self.session.cookies = deserialize_cookies(data["cookies"])
+
+        try:
+            # Lightweight authenticated call — proves the Bearer token is
+            # still accepted (the session cookie outlives it in practice).
+            self.api_get("/api/v1/perms/users/self/assets/", params={"limit": 1})
+        except AuthError:
+            logger.info(
+                "Cached session for '%s' expired; logging in again.",
+                self.server.name,
+            )
+            clear_session(self.server)
+            return False
+        except APIError as e:
+            # Transport failure: don't trust the cache, but also don't wipe
+            # it — a full login below will surface the real error.
+            logger.debug("Session probe failed (%s); falling back to login.", e)
+            return False
+
+        self._logged_in = True
+        logger.info("Reusing cached session for '%s'.", self.server.name)
+        return True
+
+    def _persist_session(self) -> None:
+        """Cache the current session state to disk (best-effort)."""
+        from jms.config.session import save_session
+
+        try:
+            save_session(
+                self.server, self.session.cookies,
+                self.bearer_token, self.csrf_token,
+            )
+        except Exception as e:
+            logger.debug("Failed to persist session: %s", e)
 
     def _api_login(self) -> None:
         """Authenticate via the API for a Bearer token, handling MFA challenge.
