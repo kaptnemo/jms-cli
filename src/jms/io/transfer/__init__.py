@@ -68,9 +68,11 @@ from jms.io.transfer.plan import (
     plan_transfer,
 )
 from jms.io.transfer.sftp import SFTP_CHANNEL_TIMEOUT, SFTPClient, connect_sftp
+from jms.io.transfer.ws import CHUNK_SIZE, WSFileClient, connect_ws_sftp
 from jms.io.transfer.spec import _parse_remote_spec, parse_transfer_spec
 
 __all__ = [
+    "CHUNK_SIZE",
     "ChunkPolicy",
     "ChunkSplitPolicy",
     "DEFAULT_CHUNK_THRESHOLD",
@@ -92,6 +94,7 @@ __all__ = [
     "SPOT_CHECK_SIZE",
     "TaskResult",
     "TransferSpec",
+    "WSFileClient",
     "_capture_sample",
     "_parse_remote_spec",
     "_pre_allocate_chunked",
@@ -100,6 +103,7 @@ __all__ = [
     "_worker",
     "_write_chunk_once",
     "connect_sftp",
+    "connect_ws_sftp",
     "execute_transfer",
     "group_parts_by_merge_target",
     "list_local_files",

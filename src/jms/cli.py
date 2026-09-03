@@ -15,6 +15,7 @@ Commands:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 from contextlib import contextmanager
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
     from jms.core.resources import AssetInfo
     from jms.core.auth import JMSSession
     from jms.transport import AbstractTerminal
-    from jms.io.transfer import FileTask, OpenerFactory, TaskResult
+    from jms.io.transfer import FileTask, OpenerFactory, TaskResult, TransferSpec
 
 
 # ──── Target parsing ────────────────────────────────────────────
@@ -477,12 +478,23 @@ def cmd_login(
     is_flag=True, default=False,
     help="Skip hidden files and directories (names starting with '.').",
 )
+@click.option(
+    "--backend",
+    type=click.Choice(["ssh", "ws", "http"], case_sensitive=False),
+    default=None,
+    envvar="JMS_TRANSFER_BACKEND",
+    help=(
+        "Transfer backend: ssh (default, native SFTP over KoKo:2222), "
+        "ws (HTTP file transfer over /koko/ws/sftp/, SHA256-verified), "
+        "or http (alias for ws). Also settable via JMS_TRANSFER_BACKEND."
+    ),
+)
 def cmd_sftp(
     src: str, dst: str, config_path: str | None, account: str | None,
     parallel: int, policy: str | None, split_policy: str, chroot: str,
-    no_verify: bool, recursive: bool, skip_hidden: bool,
+    no_verify: bool, recursive: bool, skip_hidden: bool, backend: str | None,
 ) -> None:
-    """Transfer files between local and remote via SFTP.
+    """Transfer files between local and remote via SFTP or HTTP (ws).
 
     One or both of SRC/DST must be a remote spec (asset[@server]:path).
     Transfer direction is detected automatically.
@@ -508,6 +520,7 @@ def cmd_sftp(
     from jms.io.transfer import RelaySpec, parse_transfer_spec
 
     spec = parse_transfer_spec(src, dst)
+    backend_name = (backend or os.environ.get("JMS_TRANSFER_BACKEND") or "ssh").lower()
     kwargs = dict(
         account=account,
         n_workers=parallel,
@@ -517,14 +530,46 @@ def cmd_sftp(
         verify=not no_verify,
         recursive=recursive,
         skip_hidden=skip_hidden,
+        backend=backend,
         session_factory=lambda srv: JMSSession(srv, otp_prompt=default_otp_prompt),
         on_status=click.echo,
-        execute_hook=_run_transfer_with_progress,
     )
     if isinstance(spec, RelaySpec):
         relay_transfer(spec, config_path, **kwargs)
+        return
+    srv = _get_server(config_path, spec.server)
+    if backend_name in ("ws", "http"):
+        _run_ws_sftp(srv, spec, kwargs)
     else:
-        srv = _get_server(config_path, spec.server)
+        kwargs["execute_hook"] = _run_transfer_with_progress
+        sftp_transfer(srv, spec, **kwargs)
+
+
+def _run_ws_sftp(
+    srv: "ServerConfig",
+    spec: "TransferSpec",
+    kwargs: dict,
+) -> None:
+    """Run a ws-backend transfer under a rich progress bar (byte-increment)."""
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TextColumn,
+        TransferSpeedColumn,
+    )
+
+    from jms.io.service import sftp_transfer
+
+    direction = "upload" if spec.is_upload else "download"
+    with Progress(
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        DownloadColumn(binary_units=True),
+        TransferSpeedColumn(),
+    ) as progress:
+        task_id = progress.add_task(direction.capitalize(), total=None)
+        kwargs = dict(kwargs, on_progress=lambda d: progress.update(task_id, advance=d))
         sftp_transfer(srv, spec, **kwargs)
 
 

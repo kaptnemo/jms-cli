@@ -21,7 +21,9 @@ layer is responsible for rendering them to the user.
 from __future__ import annotations
 
 import os
+import posixpath
 import shlex
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -44,11 +46,13 @@ from jms.io.transfer import (
     TaskResult,
     TransferSpec,
     connect_sftp,
+    connect_ws_sftp,
     list_local_files,
     list_remote_files,
     resolve_local_dst,
     resolve_remote_dst,
 )
+from jms.io.transfer.ws import WSFileClient
 from jms.io.verify import LocalHasher, RemoteHasher
 
 # Zero-arg callable returning a context manager that yields a hasher.
@@ -64,6 +68,10 @@ ExecuteHook = Callable[[list[FileTask], OpenerFactory, OpenerFactory, int, str],
 # CLI-injected one-line status sink (e.g. a terminal echo).
 StatusHook = Callable[[str], None]
 
+# CLI-injected progress sink for the WebSocket transfer backend: receives the
+# number of bytes just transferred (increments).
+WSProgressHook = Callable[[int], None]
+
 
 def _emit(message: str, on_status: StatusHook | None) -> None:
     """Route a one-line status message to ``on_status`` or the logger."""
@@ -71,6 +79,37 @@ def _emit(message: str, on_status: StatusHook | None) -> None:
         on_status(message)
     else:
         logger.info(message)
+
+
+# Backends accepted by the transfer layer. ``http`` is a legacy alias for
+# ``ws``: the only viable API path is the WebSocket endpoint (the elFinder HTTP
+# connector needs a companion ``/koko/ws/elfinder`` session and cannot run
+# standalone). ``ssh`` is the default (native SFTP over KoKo's port 2222).
+_TRANSFER_BACKENDS: frozenset[str] = frozenset({"ssh", "ws", "http"})
+
+
+def resolve_backend(backend: str | None = None) -> str:
+    """Resolve the transfer backend name from an explicit value, then the
+    ``JMS_TRANSFER_BACKEND`` env var, then ``"ssh"``. ``http`` maps to ``ws``.
+
+    Args:
+        backend: Explicit backend name, or None to consult the environment.
+
+    Returns:
+        Canonical backend name (``"ssh"`` or ``"ws"``).
+
+    Raises:
+        TransferError: The resolved name is not a known backend.
+    """
+    name = (backend or os.environ.get("JMS_TRANSFER_BACKEND") or "ssh").strip().lower()
+    if name == "http":
+        name = "ws"
+    if name not in _TRANSFER_BACKENDS:
+        raise TransferError(
+            f"Unknown transfer backend: {name!r} "
+            f"(expected one of ssh, ws, http)"
+        )
+    return name
 
 
 def _make_session(
@@ -396,6 +435,186 @@ def run_transfer(
     )
 
 
+def ws_transfer(
+    server: ServerConfig,
+    spec: TransferSpec,
+    account: str | None = None,
+    *,
+    n_workers: int = 4,
+    recursive: bool = False,
+    skip_hidden: bool = False,
+    session_factory: SessionFactory | None = None,
+    on_status: StatusHook | None = None,
+    on_progress: WSProgressHook | None = None,
+) -> None:
+    """Upload or download via KoKo's ``/koko/ws/sftp/`` chunked protocol.
+
+    Integrity is enforced server-side (per-chunk SHA256 on upload, full-file
+    SHA256 on commit, per-chunk SHA256 on download), so the SSH-exec md5
+    verification pass is neither applicable nor necessary. Chunks of a single
+    file are written sequentially (the protocol requires it); distinct files
+    are still transferred across ``n_workers`` worker threads, each holding its
+    own WebSocket connection.
+
+    Args:
+        server: Target server config.
+        spec: Parsed ``TransferSpec`` (direction + paths).
+        account: Optional account override.
+        n_workers: Max parallel files.
+        recursive: Recurse into directories.
+        skip_hidden: Skip hidden files and directories.
+        session_factory: Injectable session creator.
+        on_status: Injectable one-line status sink.
+        on_progress: Injectable byte-increment progress sink.
+
+    Raises:
+        TransferError: If the transfer cannot be set up or verified.
+    """
+    session, asset = _resolve(server, spec.asset, account, session_factory)
+
+    def client_factory() -> WSFileClient:
+        return connect_ws_sftp(session, asset)
+
+    if spec.is_upload:
+        src_path = Path(spec.local_path)
+        if src_path.is_dir() and not recursive:
+            raise TransferError(
+                f"'{spec.local_path}' is a directory. Use -R to transfer recursively."
+            )
+        files = list_local_files(
+            spec.local_path, recursive=recursive, skip_hidden=skip_hidden,
+        )
+        with client_factory() as client:
+            if src_path.is_dir():
+                base = str(src_path)
+                files = [
+                    replace(
+                        f,
+                        dst_path=(
+                            f"{spec.remote_path.rstrip('/')}/"
+                            f"{os.path.relpath(f.src_path, base)}"
+                        ),
+                    )
+                    for f in files
+                ]
+            else:
+                dst_file = resolve_remote_dst(client, spec.remote_path, src_path.name)
+                files = [replace(f, dst_path=dst_file) for f in files]
+        _ws_upload(files, client_factory, n_workers, on_status, on_progress)
+        return
+
+    with client_factory() as client:
+        try:
+            src_info = client.stat(spec.remote_path)
+        except Exception:
+            raise TransferError(f"Remote path not found: {spec.remote_path}")
+        if src_info["is_dir"] and not recursive:
+            raise TransferError(
+                f"'{spec.remote_path}' is a directory. "
+                f"Use -R to transfer recursively."
+            )
+        files = list_remote_files(
+            client, spec.remote_path, recursive=recursive, skip_hidden=skip_hidden,
+        )
+        if src_info["is_dir"]:
+            base = spec.remote_path.rstrip("/")
+            files = [
+                replace(
+                    f,
+                    dst_path=str(Path(spec.local_path) / _relative(base, f.src_path)),
+                )
+                for f in files
+            ]
+        else:
+            files = [
+                replace(
+                    f,
+                    dst_path=resolve_local_dst(spec.local_path, Path(f.src_path).name),
+                )
+                for f in files
+            ]
+    _ws_download(files, client_factory, n_workers, on_status, on_progress)
+
+
+def _ws_upload(
+    files: list[FileInfo],
+    client_factory: Callable[[], WSFileClient],
+    n_workers: int,
+    on_status: StatusHook | None,
+    on_progress: WSProgressHook | None,
+) -> None:
+    """Upload ``files`` (local -> remote) via per-file WebSocket connections."""
+    total = sum(f.size for f in files)
+    _emit(
+        f"[ws] uploading {len(files)} file(s), {total} bytes ...", on_status,
+    )
+
+    def report(delta: int) -> None:
+        if on_progress:
+            on_progress(delta)
+
+    def one(f: FileInfo) -> None:
+        client = client_factory()
+        try:
+            client.mkdir(posixpath.dirname(f.dst_path))
+            client.upload_file(
+                f.dst_path, f.src_path, f.size, on_progress=report,
+            )
+        finally:
+            client.close()
+
+    if n_workers > 1 and len(files) > 1:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            list(pool.map(one, files))
+    else:
+        for f in files:
+            one(f)
+
+    _emit(
+        f"[OK] Upload complete: {total} bytes ({len(files)} file(s)).",
+        on_status,
+    )
+
+
+def _ws_download(
+    files: list[FileInfo],
+    client_factory: Callable[[], WSFileClient],
+    n_workers: int,
+    on_status: StatusHook | None,
+    on_progress: WSProgressHook | None,
+) -> None:
+    """Download ``files`` (remote -> local) via per-file WebSocket connections."""
+    total = sum(f.size for f in files)
+    _emit(
+        f"[ws] downloading {len(files)} file(s), {total} bytes ...", on_status,
+    )
+
+    def report(delta: int) -> None:
+        if on_progress:
+            on_progress(delta)
+
+    def one(f: FileInfo) -> None:
+        client = client_factory()
+        try:
+            client.download_file(
+                f.src_path, f.dst_path, f.size, on_progress=report,
+            )
+        finally:
+            client.close()
+
+    if n_workers > 1 and len(files) > 1:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            list(pool.map(one, files))
+    else:
+        for f in files:
+            one(f)
+
+    _emit(
+        f"[OK] Download complete: {total} bytes ({len(files)} file(s)).",
+        on_status,
+    )
+
+
 def sftp_transfer(
     server: ServerConfig,
     spec: TransferSpec,
@@ -408,11 +627,13 @@ def sftp_transfer(
     verify: bool = True,
     recursive: bool = False,
     skip_hidden: bool = False,
+    backend: str | None = None,
     session_factory: SessionFactory | None = None,
     execute_hook: ExecuteHook | None = None,
     on_status: StatusHook | None = None,
+    on_progress: WSProgressHook | None = None,
 ) -> None:
-    """Execute an SFTP upload or download (exactly one remote side).
+    """Execute an upload or download (exactly one remote side).
 
     Args:
         server: Target server config.
@@ -420,20 +641,36 @@ def sftp_transfer(
         account: Optional account override.
         n_workers: Max parallel workers.
         policy_name: Chunk policy name ("full" / "files_only"), or None
-            for the default (FULL).
+            for the default (FULL). Ignored by the ``ws`` backend.
         split_policy_name: Chunk split policy name ("seek" /
-            "split-files").
-        chroot: SFTP chroot in SSH-exec terms.
-        verify: Enable post-transfer md5 verification.
+            "split-files"). Ignored by the ``ws`` backend.
+        chroot: SFTP chroot in SSH-exec terms (ssh backend only).
+        verify: Enable post-transfer md5 verification (ssh backend only;
+            the ws backend enforces SHA256 server-side).
         recursive: Recurse into directories.
         skip_hidden: Skip hidden files and directories.
+        backend: Transfer backend ("ssh" / "ws" / "http"); None consults
+            ``JMS_TRANSFER_BACKEND`` then defaults to "ssh".
         session_factory: Injectable session creator.
-        execute_hook: Injectable transfer runner (progress rendering).
+        execute_hook: Injectable transfer runner (progress rendering, ssh
+            backend only).
         on_status: Injectable one-line status sink.
+        on_progress: Injectable byte-increment progress sink (ws backend
+            only).
 
     Raises:
         TransferError: If the transfer cannot be set up or verified.
     """
+    backend_name = resolve_backend(backend)
+    if backend_name == "ws":
+        ws_transfer(
+            server, spec, account,
+            n_workers=n_workers, recursive=recursive, skip_hidden=skip_hidden,
+            session_factory=session_factory, on_status=on_status,
+            on_progress=on_progress,
+        )
+        return
+
     policy = ChunkPolicy(policy_name.lower()) if policy_name else ChunkPolicy.FULL
     split_policy = ChunkSplitPolicy(split_policy_name.lower())
     session, asset = _resolve(server, spec.asset, account, session_factory)
@@ -544,6 +781,7 @@ def relay_transfer(
     verify: bool = True,
     recursive: bool = False,
     skip_hidden: bool = False,
+    backend: str | None = None,
     session_factory: SessionFactory | None = None,
     execute_hook: ExecuteHook | None = None,
     on_status: StatusHook | None = None,
@@ -563,6 +801,9 @@ def relay_transfer(
         verify: Enable post-transfer md5 verification.
         recursive: Recurse into directories.
         skip_hidden: Skip hidden files and directories.
+        backend: Transfer backend ("ssh" / "ws" / "http"); None consults
+            ``JMS_TRANSFER_BACKEND`` then defaults to "ssh". The ``ws``
+            backend does not support relay yet.
         session_factory: Injectable session creator.
         execute_hook: Injectable transfer runner (progress rendering).
         on_status: Injectable one-line status sink.
@@ -570,6 +811,12 @@ def relay_transfer(
     Raises:
         TransferError: If the transfer cannot be set up or verified.
     """
+    backend_name = resolve_backend(backend)
+    if backend_name == "ws":
+        raise TransferError(
+            "remote-to-remote relay is not supported by the ws backend; "
+            "use the ssh backend (JMS_TRANSFER_BACKEND=ssh)"
+        )
     policy = ChunkPolicy(policy_name.lower()) if policy_name else ChunkPolicy.FULL
     split_policy = ChunkSplitPolicy(split_policy_name.lower())
 
